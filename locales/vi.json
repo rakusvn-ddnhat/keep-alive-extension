@@ -1,0 +1,18 @@
+{
+  "blockCloseTab": "Chặn đóng Tab",
+  "recordRequests": "Record Requests",
+  "showIndicator": "Hiện nút trạng thái ghi request",
+  "filterDomain": "Nhập domain muốn record",
+  "currentTab": "Lấy domain",
+  "recordHelp": "💡 Để trống = ghi lại tất cả domain. Hoặc nhập domain cụ thể (VD: example.com)",
+  "requestsRecorded": "requests đã ghi lại",
+  "exportCurl": "Export cURL",
+  "exportJMeter": "Export JMeter",
+  "clearAll": "Xóa tất cả",
+  "devToolsNote": "💡 <b>Lưu ý:</b> Vui lòng mở DevTools (F12) để xem requests trong tab Network.",
+  "openDevTools": "Mở DevTools (F12)",
+  "openDevToolsDesc": "nếu muốn xem requests trong tab Network",
+  "devToolsOpened": "Đã mở<br>DevTools ✓",
+  "language": "Ngôn ngữ",
+  "copyright": "© Đoàn Duy Nhất"
+}

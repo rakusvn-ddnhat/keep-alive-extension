@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { width: 250px; padding: 10px; font-family: sans-serif; }
+    .container { display: flex; align-items: center; justify-content: space-between; }
+    .switch { position: relative; display: inline-block; width: 40px; height: 20px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 20px; }
+    .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 2px; bottom: 2px; background-color: white; transition: .4s; border-radius: 50%; }
+    input:checked + .slider { background-color: #2196F3; }
+    input:checked + .slider:before { transform: translateX(20px); }
+    p { font-size: 12px; color: #666; margin-top: 10px; }
+    .section { margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee; }
+    .btn { width: 100%; padding: 8px; margin: 5px 0; border: none; background: #4CAF50; color: white; cursor: pointer; border-radius: 4px; font-size: 12px; }
+    .btn:hover { background: #45a049; }
+    .btn:disabled { background: #ccc; cursor: not-allowed; }
+    .btn-secondary { background: #2196F3; }
+    .btn-secondary:hover { background: #0b7dda; }
+    .btn-danger { background: #f44336; }
+    .btn-danger:hover { background: #da190b; }
+    .status { font-size: 11px; color: #999; text-align: center; margin: 5px 0; }
+    select { padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <!-- Language Selector -->
+  <div class="container" style="margin-bottom: 10px;">
+    <span data-i18n="language">Ngôn ngữ</span>
+    <select id="languageSelect">
+      <option value="vi">Tiếng Việt</option>
+      <option value="en">English</option>
+      <option value="ja">日本語</option>
+    </select>
+  </div>
+
+  <div class="container">
+    <span data-i18n="blockCloseTab">Chặn đóng Tab</span>
+    <label class="switch">
+      <input type="checkbox" id="toggleBtn">
+      <span class="slider"></span>
+    </label>
+  </div>
+  
+  <p style="font-size: 11px; color: #666; padding: 8px; background: #f5f5f5; border-radius: 5px; margin-top: 10px;" data-i18n-html="devToolsNote">
+    💡 <b>Lưu ý:</b> Vui lòng mở DevTools (F12) để xem requests trong tab Network.
+  </p>
+  
+  <div class="section">
+    <div class="container">
+      <span data-i18n="recordRequests">Record Requests</span>
+      <label class="switch">
+        <input type="checkbox" id="recordBtn">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="container" style="margin-top: 10px;">
+      <span data-i18n="showIndicator">Hiện trợ lý</span>
+      <label class="switch">
+        <input type="checkbox" id="showIndicatorToggle" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+    <p style="font-size: 10px; color: #888; margin: 8px 0; line-height: 1.4;" data-i18n="recordHelp">
+      💡 Để trống = ghi lại tất cả domain. Hoặc nhập domain cụ thể (VD: example.com)
+    </p>
+    <div style="display: flex; gap: 5px; margin: 5px 0;">
+      <input type="text" id="domainFilter" data-i18n-placeholder="filterDomain" placeholder="Nhập domain muốn record" style="flex: 1; padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+      <button id="getCurrentDomain" data-i18n="currentTab" style="padding: 6px 12px; border: 1px solid #2196F3; background: white; color: #2196F3; border-radius: 4px; cursor: pointer; font-size: 12px; white-space: nowrap;">Lấy domain</button>
+    </div>
+    <div class="status" id="requestCount">0 <span data-i18n="requestsRecorded">requests đã ghi lại</span></div>
+    <button class="btn btn-secondary" id="exportJMeter" data-i18n="exportJMeter">Export JMeter</button>
+    <button class="btn" id="exportCurl" data-i18n="exportCurl">Export cURL</button>
+    <button class="btn btn-danger" id="clearRequests" data-i18n="clearAll">Xóa tất cả</button>
+  </div>
+  
+  <p style="text-align: center; color: #999; font-size: 10px; margin-top: 15px;" data-i18n="copyright">© Đoàn Duy Nhất</p>
+  <script src="popup.js"></script>
+</body>
+</html>

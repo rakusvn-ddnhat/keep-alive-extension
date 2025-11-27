@@ -1,0 +1,18 @@
+{
+  "blockCloseTab": "Block Close Tab",
+  "recordRequests": "Record Requests",
+  "showIndicator": "Show Recording Status Button",
+  "filterDomain": "Enter domain to record",
+  "currentTab": "Get Domain",
+  "recordHelp": "💡 Leave empty = record all domains. Or enter specific domain (e.g., example.com)",
+  "requestsRecorded": "requests recorded",
+  "exportCurl": "Export cURL",
+  "exportJMeter": "Export JMeter",
+  "clearAll": "Clear All",
+  "devToolsNote": "💡 <b>Note:</b> Please open DevTools (F12) to view requests in the Network tab.",
+  "openDevTools": "Open DevTools (F12)",
+  "openDevToolsDesc": "to view requests in Network tab",
+  "devToolsOpened": "DevTools<br>Opened ✓",
+  "language": "Language",
+  "copyright": "© Doan Duy Nhat"
+}

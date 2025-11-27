@@ -1,0 +1,18 @@
+{
+  "blockCloseTab": "タブを閉じるのをブロック",
+  "recordRequests": "リクエストを記録",
+  "showIndicator": "記録ステータスボタン表示",
+  "filterDomain": "記録するドメインを入力",
+  "currentTab": "ドメイン取得",
+  "recordHelp": "💡 空白 = すべてのドメインを記録。または特定のドメインを入力（例：example.com）",
+  "requestsRecorded": "件のリクエストを記録しました",
+  "exportCurl": "cURLをエクスポート",
+  "exportJMeter": "JMeterをエクスポート",
+  "clearAll": "すべてクリア",
+  "devToolsNote": "💡 <b>注意:</b> Networkタブでリクエストを表示するには、DevTools（F12）を開いてください。",
+  "openDevTools": "DevTools（F12）を開く",
+  "openDevToolsDesc": "Networkタブでリクエストを表示する",
+  "devToolsOpened": "DevTools<br>開きました ✓",
+  "language": "言語",
+  "copyright": "© Đoàn Duy Nhất"
+}
