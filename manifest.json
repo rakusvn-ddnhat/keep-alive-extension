@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Tab Keeper & Request Recorder",
-  "version": "1.0",
+  "version": "0.0.1",
   "description": "Chặn đóng tab và ghi lại HTTP requests để debug. Block tab closing and record HTTP requests for debugging. © Đoàn Duy Nhất",
   "permissions": [
     "storage",
@@ -23,7 +23,8 @@
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
-      "run_at": "document_start"
+      "run_at": "document_start",
+      "all_frames": true
     }
   ],
   "web_accessible_resources": [

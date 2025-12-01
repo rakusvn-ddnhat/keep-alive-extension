@@ -14,5 +14,12 @@
   "openDevToolsDesc": "to view requests in Network tab",
   "devToolsOpened": "DevTools<br>Opened ✓",
   "language": "Language",
+  "copyMode": "📋 Copy Mode",
+  "copyModeTitle": "Copy Mode",
+  "copyModeHelp": "💡 Enable Copy Mode: Hover over text/button then click to auto copy",
+  "copiedText": "Copied!",
+  "copyModeOn": "📋 Turn Off Copy Mode",
+  "copyModeOff": "📋 Turn On Copy Mode",
+  "showCopyIndicator": "Show button on page",
   "copyright": "© Doan Duy Nhat"
 }

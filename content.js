@@ -3,8 +3,16 @@ let isRecording = false;
 let currentLang = 'vi';
 let messages = {};
 let showIndicator = true; // Trạng thái hiển thị indicator
+let copyModeEnabled = false; // Trạng thái Copy Mode
+let copyModeActive = false; // Flag để track xem Copy Mode đã thực sự được bật chưa
+let showCopyIndicator = true; // Hiển thị nút Copy Mode trên trang
+let lastHoveredElement = null; // Element cuối cùng được hover
+let copyDebounceTimer = null; // Timer để debounce copy
 
-console.log('[Keep Alive] Extension loaded');
+// Chỉ chạy trong top frame, không chạy trong iframe
+const isTopFrame = (window === window.top);
+
+console.log('[Keep Alive] Extension loaded, isTopFrame:', isTopFrame);
 
 // Load language messages
 async function loadLanguage(lang) {
@@ -19,12 +27,49 @@ async function loadLanguage(lang) {
 }
 
 // Load saved language and showIndicator state
-chrome.storage.local.get(['language', 'showIndicator'], (result) => {
+chrome.storage.local.get(['language', 'showIndicator', 'copyModeEnabled', 'showCopyIndicator'], (result) => {
   const savedLang = result.language || 'vi';
   loadLanguage(savedLang);
   
   // Load showIndicator state (default true)
   showIndicator = result.showIndicator !== undefined ? result.showIndicator : true;
+  
+  // Load showCopyIndicator state (default true)
+  showCopyIndicator = result.showCopyIndicator !== undefined ? result.showCopyIndicator : true;
+  
+  // Load copyModeEnabled state (default false) - CHẠY Ở TẤT CẢ FRAMES
+  copyModeEnabled = result.copyModeEnabled || false;
+  
+  // LUÔN tạo indicator ở top frame (để người dùng có thể click bật/tắt)
+  // Sau đó mới ẩn/hiện dựa trên showCopyIndicator
+  if (isTopFrame) {
+    initCopyModeIndicator();
+  }
+  
+  // LUÔN thêm CSS highlight vào TẤT CẢ FRAMES (kể cả frame con)
+  addCopyModeHighlightStyle();
+  
+  // Nếu Copy Mode đang bật, enable nó (add event listeners)
+  if (copyModeEnabled) {
+    // Kiểm tra DOM ready - hỗ trợ cả frameset
+    const isDOMReady = () => {
+      return document.body || document.documentElement || document.readyState !== 'loading';
+    };
+    
+    if (isDOMReady()) {
+      enableCopyMode();
+    } else if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => enableCopyMode(), { once: true });
+    } else {
+      // Fallback
+      const waitForDOM = setInterval(() => {
+        if (isDOMReady()) {
+          clearInterval(waitForDOM);
+          enableCopyMode();
+        }
+      }, 50);
+    }
+  }
   
   // Ẩn/hiện indicator dựa trên setting
   const indicator = document.getElementById('nhat-debug-indicator');
@@ -44,6 +89,26 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
     const indicator = document.getElementById('nhat-debug-indicator');
     if (indicator) {
       indicator.style.display = showIndicator ? 'block' : 'none';
+    }
+  }
+  
+  if (namespace === 'local' && changes.copyModeEnabled) {
+    // Xử lý Copy Mode ở TẤT CẢ FRAMES
+    copyModeEnabled = changes.copyModeEnabled.newValue;
+    console.log('[Keep Alive] Storage changed - copyModeEnabled:', copyModeEnabled);
+    if (copyModeEnabled) {
+      enableCopyMode();
+    } else {
+      disableCopyMode();
+    }
+  }
+  
+  if (namespace === 'local' && changes.showCopyIndicator) {
+    showCopyIndicator = changes.showCopyIndicator.newValue;
+    const indicator = document.getElementById('nhat-copy-mode-indicator');
+    if (indicator) {
+      indicator.style.display = showCopyIndicator ? 'block' : 'none';
+      indicator.style.visibility = showCopyIndicator ? 'visible' : 'hidden';
     }
   }
 });
@@ -577,4 +642,529 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ success: true });
     return true;
   }
+  
+  if (request.action === 'toggleCopyMode') {
+    // Bật/tắt Copy Mode ở TẤT CẢ FRAMES
+    copyModeEnabled = request.enabled;
+    if (copyModeEnabled) {
+      enableCopyMode();
+    } else {
+      disableCopyMode();
+    }
+    sendResponse({ success: true });
+    return true;
+  }
 });
+
+// ==================== COPY MODE FUNCTIONS ====================
+
+// Thêm CSS highlight style vào tất cả frames
+function addCopyModeHighlightStyle() {
+  if (document.getElementById('nhat-copy-mode-style')) return;
+  
+  const style = document.createElement('style');
+  style.id = 'nhat-copy-mode-style';
+  style.textContent = `
+    .nhat-copy-highlight {
+      outline: 2px dashed #9c27b0 !important;
+      outline-offset: 2px !important;
+      background-color: rgba(156, 39, 176, 0.1) !important;
+      cursor: copy !important;
+      transition: all 0.15s ease !important;
+    }
+  `;
+  
+  // Append vào head hoặc documentElement (cho frameset)
+  const container = document.head || document.documentElement;
+  if (container) {
+    container.appendChild(style);
+    console.log('[Keep Alive] Copy Mode highlight style added, isTopFrame:', isTopFrame);
+  }
+}
+
+// Tạo tooltip hiển thị "Đã copy!"
+function showCopyTooltip(x, y, text) {
+  // Xóa tooltip cũ nếu có
+  const existingTooltip = document.getElementById('nhat-copy-tooltip');
+  if (existingTooltip) {
+    existingTooltip.remove();
+  }
+  
+  const copiedText = messages.copiedText || 'Đã copy!';
+  
+  const tooltip = document.createElement('div');
+  tooltip.id = 'nhat-copy-tooltip';
+  tooltip.innerHTML = `
+    <div style="display: flex; align-items: center; gap: 5px;">
+      <span style="font-size: 14px;">✅</span>
+      <span>${copiedText}</span>
+    </div>
+    <div style="font-size: 10px; opacity: 0.8; margin-top: 3px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+      "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"
+    </div>
+  `;
+  tooltip.style.cssText = `
+    position: fixed;
+    top: ${y - 60}px;
+    left: ${x}px;
+    transform: translateX(-50%);
+    background: rgba(76, 175, 80, 0.95);
+    color: white;
+    padding: 8px 14px;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    z-index: 999999999;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    animation: copyTooltipIn 0.3s ease-out;
+    pointer-events: none;
+  `;
+  
+  // Thêm CSS animation nếu chưa có
+  if (!document.getElementById('nhat-copy-tooltip-style')) {
+    const style = document.createElement('style');
+    style.id = 'nhat-copy-tooltip-style';
+    style.textContent = `
+      @keyframes copyTooltipIn {
+        0% { opacity: 0; transform: translateX(-50%) translateY(10px); }
+        100% { opacity: 1; transform: translateX(-50%) translateY(0); }
+      }
+      @keyframes copyTooltipOut {
+        0% { opacity: 1; transform: translateX(-50%) translateY(0); }
+        100% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+      }
+    `;
+    // Append vào head hoặc documentElement
+    (document.head || document.documentElement).appendChild(style);
+  }
+  
+  // Append vào body hoặc documentElement (cho frameset)
+  const container = document.body || document.documentElement;
+  container.appendChild(tooltip);
+  
+  // Tự động xóa sau 1.5 giây
+  setTimeout(() => {
+    if (tooltip.parentElement) {
+      tooltip.style.animation = 'copyTooltipOut 0.3s ease-out forwards';
+      setTimeout(() => tooltip.remove(), 300);
+    }
+  }, 1500);
+}
+
+// Tạo floating indicator cho Copy Mode (CHỈ Ở TOP FRAME)
+// Indicator luôn hiện, chỉ đổi trạng thái BẬT/TẮT, có thể kéo thả
+function createCopyModeIndicator() {
+  // Chỉ hiện indicator ở top frame để tránh trùng lặp
+  if (!isTopFrame) {
+    return;
+  }
+  
+  let indicator = document.getElementById('nhat-copy-mode-indicator');
+  
+  // Nếu đã có indicator, chỉ cập nhật trạng thái
+  if (indicator) {
+    updateCopyModeIndicatorState(indicator);
+    return;
+  }
+  
+  indicator = document.createElement('div');
+  indicator.id = 'nhat-copy-mode-indicator';
+  updateCopyModeIndicatorState(indicator);
+  
+  // Set màu mặc định dựa trên trạng thái copyModeEnabled
+  const defaultBg = copyModeEnabled 
+    ? 'linear-gradient(135deg, rgba(76, 175, 80, 0.95), rgba(56, 142, 60, 0.95))'
+    : 'linear-gradient(135deg, #757575, #616161)';
+  
+  indicator.style.cssText = `
+    position: fixed !important;
+    bottom: 80px !important;
+    right: 20px !important;
+    color: white !important;
+    padding: 8px 12px !important;
+    border-radius: 20px !important;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3) !important;
+    z-index: 2147483647 !important;
+    font-family: Arial, sans-serif !important;
+    cursor: pointer !important;
+    user-select: none !important;
+    display: ${showCopyIndicator ? 'block' : 'none'} !important;
+    visibility: ${showCopyIndicator ? 'visible' : 'hidden'} !important;
+    opacity: 1 !important;
+    transition: background 0.3s ease !important;
+    background: ${defaultBg} !important;
+  `;
+  
+  // Drag and drop functionality
+  let isDragging = false;
+  let hasMoved = false;
+  let currentX;
+  let currentY;
+  let initialX;
+  let initialY;
+  let xOffset = 0;
+  let yOffset = 0;
+  
+  // Load vị trí đã lưu từ localStorage (với giới hạn hợp lý)
+  try {
+    const savedPosition = localStorage.getItem('nhat-copy-indicator-position');
+    if (savedPosition) {
+      const pos = JSON.parse(savedPosition);
+      // Giới hạn vị trí trong màn hình (không cho kéo quá xa)
+      const maxX = window.innerWidth - 100;
+      const maxY = window.innerHeight - 100;
+      const minX = -window.innerWidth + 100;
+      const minY = -window.innerHeight + 100;
+      
+      xOffset = Math.max(minX, Math.min(maxX, pos.x || 0));
+      yOffset = Math.max(minY, Math.min(maxY, pos.y || 0));
+      
+      // Nếu vị trí lưu nằm ngoài màn hình, reset về 0
+      if (Math.abs(pos.x) > maxX || Math.abs(pos.y) > maxY) {
+        console.log('[Keep Alive] Reset copy indicator position - was out of bounds');
+        xOffset = 0;
+        yOffset = 0;
+        localStorage.removeItem('nhat-copy-indicator-position');
+      } else {
+        indicator.style.transform = `translate(${xOffset}px, ${yOffset}px)`;
+      }
+    }
+  } catch (e) {
+    console.log('[Keep Alive] Could not load saved copy indicator position');
+  }
+  
+  indicator.addEventListener('mousedown', (e) => {
+    initialX = e.clientX - xOffset;
+    initialY = e.clientY - yOffset;
+    isDragging = true;
+    hasMoved = false;
+  });
+  
+  document.addEventListener('mousemove', (e) => {
+    if (isDragging) {
+      e.preventDefault();
+      currentX = e.clientX - initialX;
+      currentY = e.clientY - initialY;
+      
+      // Check if moved more than 5px
+      if (Math.abs(currentX - xOffset) > 5 || Math.abs(currentY - yOffset) > 5) {
+        hasMoved = true;
+      }
+      
+      xOffset = currentX;
+      yOffset = currentY;
+      indicator.style.transform = `translate(${currentX}px, ${currentY}px)`;
+    }
+  });
+  
+  document.addEventListener('mouseup', () => {
+    if (isDragging) {
+      isDragging = false;
+      
+      // Lưu vị trí vào localStorage
+      try {
+        localStorage.setItem('nhat-copy-indicator-position', JSON.stringify({
+          x: xOffset,
+          y: yOffset
+        }));
+      } catch (e) {
+        console.log('[Keep Alive] Could not save copy indicator position');
+      }
+    }
+  });
+  
+  // Click để bật/tắt Copy Mode (chỉ khi không kéo)
+  indicator.addEventListener('click', (e) => {
+    // Chỉ toggle nếu không kéo
+    if (hasMoved) {
+      hasMoved = false;
+      return;
+    }
+    
+    const newState = !copyModeEnabled;
+    copyModeEnabled = newState;
+    chrome.storage.local.set({ copyModeEnabled: newState });
+    
+    if (newState) {
+      enableCopyMode();
+    } else {
+      disableCopyMode();
+    }
+  });
+  
+  // Append vào body hoặc documentElement (cho frameset)
+  const container = document.body || document.documentElement;
+  container.appendChild(indicator);
+  
+  console.log('[Keep Alive] Copy Mode indicator created');
+}
+
+// Cập nhật trạng thái indicator (BẬT/TẮT)
+function updateCopyModeIndicatorState(indicator) {
+  if (!indicator) {
+    indicator = document.getElementById('nhat-copy-mode-indicator');
+  }
+  if (!indicator) return;
+  
+  const copyModeOnText = messages.copyModeOn || '📋 Copy: BẬT';
+  const copyModeOffText = messages.copyModeOff || '📋 Copy: TẮT';
+  
+  if (copyModeEnabled) {
+    indicator.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <span style="font-size: 14px;">📋</span>
+        <span style="font-size: 11px; font-weight: bold;">Copy: BẬT</span>
+      </div>
+    `;
+    indicator.style.background = 'linear-gradient(135deg, rgba(76, 175, 80, 0.95), rgba(56, 142, 60, 0.95))';
+  } else {
+    indicator.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <span style="font-size: 14px;">📋</span>
+        <span style="font-size: 11px; font-weight: bold;">Copy: TẮT</span>
+      </div>
+    `;
+    // Màu xám đậm, không trong suốt
+    indicator.style.background = 'linear-gradient(135deg, #757575, #616161)';
+  }
+}
+
+// Khởi tạo Copy Mode indicator khi DOM ready (LUÔN tạo nếu showCopyIndicator = true)
+function initCopyModeIndicator() {
+  if (!isTopFrame) return;
+  
+  console.log('[Keep Alive] initCopyModeIndicator called, showCopyIndicator:', showCopyIndicator);
+  
+  const isDOMReady = () => {
+    return document.body || document.documentElement || document.readyState !== 'loading';
+  };
+  
+  const doCreate = () => {
+    console.log('[Keep Alive] Creating Copy Mode indicator...');
+    createCopyModeIndicator();
+  };
+  
+  if (isDOMReady()) {
+    doCreate();
+  } else {
+    document.addEventListener('DOMContentLoaded', doCreate, { once: true });
+  }
+}
+
+// Lấy text content từ element
+function getTextFromElement(element) {
+  if (!element) return '';
+  
+  // Ưu tiên các thuộc tính có text
+  if (element.value && typeof element.value === 'string') {
+    return element.value.trim();
+  }
+  
+  if (element.textContent) {
+    return element.textContent.trim();
+  }
+  
+  if (element.innerText) {
+    return element.innerText.trim();
+  }
+  
+  if (element.alt) {
+    return element.alt.trim();
+  }
+  
+  if (element.title) {
+    return element.title.trim();
+  }
+  
+  if (element.placeholder) {
+    return element.placeholder.trim();
+  }
+  
+  return '';
+}
+
+// Xử lý hover event
+function handleCopyModeHover(e) {
+  if (!copyModeEnabled || !copyModeActive) {
+    console.log('[Keep Alive] Hover blocked - copyModeEnabled:', copyModeEnabled, 'copyModeActive:', copyModeActive);
+    return;
+  }
+  
+  const target = e.target;
+  
+  // Bỏ qua các element của extension
+  try {
+    if (target.id && target.id.startsWith('nhat-')) return;
+    if (target.closest && target.closest('#nhat-copy-mode-indicator')) return;
+    if (target.closest && target.closest('#nhat-copy-tooltip')) return;
+    if (target.closest && target.closest('#nhat-debug-indicator')) return;
+    if (target.closest && target.closest('#nhat-devtools-button')) return;
+  } catch (err) {
+    // Bỏ qua lỗi closest
+  }
+  
+  // Xóa highlight cũ
+  if (lastHoveredElement && lastHoveredElement !== target) {
+    try {
+      lastHoveredElement.classList.remove('nhat-copy-highlight');
+    } catch (err) {}
+  }
+  
+  // Lấy text từ element
+  const text = getTextFromElement(target);
+  
+  // Chỉ highlight nếu có text
+  if (text && text.length > 0) {
+    try {
+      target.classList.add('nhat-copy-highlight');
+      lastHoveredElement = target;
+      console.log('[Keep Alive] Highlighting:', target.tagName, 'text:', text.substring(0, 30));
+    } catch (err) {
+      console.log('[Keep Alive] Cannot add highlight class:', err);
+    }
+  }
+}
+
+// Xử lý click event để copy
+function handleCopyModeClick(e) {
+  if (!copyModeEnabled || !copyModeActive) return;
+  
+  const target = e.target;
+  
+  // Bỏ qua các element của extension
+  try {
+    if (target.id && target.id.startsWith('nhat-')) return;
+    if (target.closest && target.closest('#nhat-copy-mode-indicator')) return;
+    if (target.closest && target.closest('#nhat-copy-tooltip')) return;
+    if (target.closest && target.closest('#nhat-debug-indicator')) return;
+    if (target.closest && target.closest('#nhat-devtools-button')) return;
+  } catch (err) {
+    // Bỏ qua lỗi closest
+  }
+  
+  // Lấy text từ element
+  const text = getTextFromElement(target);
+  
+  if (text && text.length > 0) {
+    // Ngăn hành vi mặc định (click button, link, etc.)
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Copy vào clipboard
+    navigator.clipboard.writeText(text).then(() => {
+      console.log('[Keep Alive] Copied:', text);
+      showCopyTooltip(e.clientX, e.clientY, text);
+    }).catch(err => {
+      console.error('[Keep Alive] Failed to copy:', err);
+      // Fallback: sử dụng execCommand
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        showCopyTooltip(e.clientX, e.clientY, text);
+      } catch (e2) {
+        console.error('[Keep Alive] Fallback copy failed:', e2);
+      }
+    });
+  }
+}
+
+// Xử lý mouse leave
+function handleCopyModeLeave(e) {
+  if (!copyModeEnabled || !copyModeActive) return;
+  
+  const target = e.target;
+  try {
+    if (target.classList) {
+      target.classList.remove('nhat-copy-highlight');
+    }
+  } catch (err) {}
+}
+
+// Bật Copy Mode
+function enableCopyMode() {
+  console.log('[Keep Alive] enableCopyMode called, copyModeActive:', copyModeActive);
+  
+  // Tránh bật nhiều lần
+  if (copyModeActive) {
+    console.log('[Keep Alive] Copy Mode already active, skipping');
+    return;
+  }
+  
+  console.log('[Keep Alive] Copy Mode enabling...');
+  
+  // Hàm thực sự bật Copy Mode
+  const doEnable = () => {
+    if (copyModeActive) return; // Double check
+    
+    copyModeActive = true;
+    console.log('[Keep Alive] Copy Mode enabled, copyModeActive set to true');
+    
+    // Tạo hoặc cập nhật indicator
+    createCopyModeIndicator();
+    
+    // Thêm event listeners
+    document.addEventListener('mouseover', handleCopyModeHover, true);
+    document.addEventListener('click', handleCopyModeClick, true);
+    document.addEventListener('mouseout', handleCopyModeLeave, true);
+    
+    console.log('[Keep Alive] Event listeners added for Copy Mode');
+  };
+  
+  // Kiểm tra DOM ready - hỗ trợ cả frameset (không có body) và body thường
+  const isDOMReady = () => {
+    return document.body || document.documentElement || document.readyState !== 'loading';
+  };
+  
+  // Đợi DOM ready
+  if (isDOMReady()) {
+    doEnable();
+  } else if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', doEnable, { once: true });
+  } else {
+    // Fallback: đợi documentElement
+    const waitForDOM = setInterval(() => {
+      if (isDOMReady()) {
+        clearInterval(waitForDOM);
+        doEnable();
+      }
+    }, 50);
+  }
+}
+
+// Tắt Copy Mode (không xóa indicator, chỉ cập nhật trạng thái)
+function disableCopyMode() {
+  // Tránh tắt nhiều lần
+  if (!copyModeActive) {
+    console.log('[Keep Alive] Copy Mode already inactive, skipping');
+    // Vẫn cập nhật indicator state
+    updateCopyModeIndicatorState();
+    return;
+  }
+  
+  copyModeActive = false;
+  console.log('[Keep Alive] Copy Mode disabled');
+  
+  // Cập nhật trạng thái indicator (không xóa)
+  updateCopyModeIndicatorState();
+  
+  // Xóa highlight nếu có
+  if (lastHoveredElement) {
+    lastHoveredElement.classList.remove('nhat-copy-highlight');
+    lastHoveredElement = null;
+  }
+  
+  // Xóa tất cả highlight còn lại
+  document.querySelectorAll('.nhat-copy-highlight').forEach(el => {
+    el.classList.remove('nhat-copy-highlight');
+  });
+  
+  // Xóa event listeners
+  document.removeEventListener('mouseover', handleCopyModeHover, true);
+  document.removeEventListener('click', handleCopyModeClick, true);
+  document.removeEventListener('mouseout', handleCopyModeLeave, true);
+}

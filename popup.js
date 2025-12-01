@@ -83,6 +83,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const domainFilter = document.getElementById('domainFilter');
   const languageSelect = document.getElementById('languageSelect');
   const showIndicatorToggle = document.getElementById('showIndicatorToggle');
+  const copyModeToggle = document.getElementById('copyModeToggle');
+  const showCopyIndicatorToggle = document.getElementById('showCopyIndicatorToggle');
+  const versionDisplay = document.getElementById('versionDisplay');
+  
+  // Hiển thị version từ manifest
+  if (versionDisplay) {
+    const manifest = chrome.runtime.getManifest();
+    versionDisplay.textContent = 'v' + manifest.version;
+  }
   
   // Set global references
   exportCurlBtn = document.getElementById('exportCurl');
@@ -102,13 +111,20 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Load saved state
-  chrome.storage.local.get(['isEnabled', 'isRecording', 'domainFilter', 'showIndicator'], (result) => {
+  chrome.storage.local.get(['isEnabled', 'isRecording', 'domainFilter', 'showIndicator', 'copyModeEnabled', 'showCopyIndicator'], (result) => {
     toggleBtn.checked = result.isEnabled || false;
     recordBtn.checked = result.isRecording || false;
     
     // Load show/hide indicator state
     const showIndicator = result.showIndicator !== undefined ? result.showIndicator : true;
     showIndicatorToggle.checked = showIndicator;
+    
+    // Load copy mode state
+    copyModeToggle.checked = result.copyModeEnabled || false;
+    
+    // Load show copy indicator state
+    const showCopyIndicator = result.showCopyIndicator !== undefined ? result.showCopyIndicator : true;
+    showCopyIndicatorToggle.checked = showCopyIndicator;
     
     // Nếu chưa có domain filter, lấy domain của tab hiện tại
     if (!result.domainFilter || result.domainFilter === '') {
@@ -149,15 +165,41 @@ document.addEventListener('DOMContentLoaded', () => {
     const showIndicator = showIndicatorToggle.checked;
     chrome.storage.local.set({ showIndicator: showIndicator });
     
-    // Gửi message tới content script để ẩn/hiện indicator
+    // Gửi message tới content script để ẩn/hiện indicator (có xử lý lỗi)
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]) {
         chrome.tabs.sendMessage(tabs[0].id, { 
           action: 'toggleIndicator', 
           show: showIndicator 
+        }).catch(() => {
+          console.log('[Popup] Content script not ready, using storage instead');
         });
       }
     });
+  });
+
+  // Toggle Copy Mode
+  copyModeToggle.addEventListener('change', () => {
+    const copyModeEnabled = copyModeToggle.checked;
+    chrome.storage.local.set({ copyModeEnabled: copyModeEnabled });
+    
+    // Gửi message tới content script để bật/tắt copy mode (có xử lý lỗi)
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        chrome.tabs.sendMessage(tabs[0].id, { 
+          action: 'toggleCopyMode', 
+          enabled: copyModeEnabled 
+        }).catch(() => {
+          console.log('[Popup] Content script not ready, using storage instead');
+        });
+      }
+    });
+  });
+
+  // Checkbox hiển thị nút Copy Mode trên trang
+  showCopyIndicatorToggle.addEventListener('change', () => {
+    const showCopyIndicator = showCopyIndicatorToggle.checked;
+    chrome.storage.local.set({ showCopyIndicator: showCopyIndicator });
   });
 
   // Save state on change - Recording

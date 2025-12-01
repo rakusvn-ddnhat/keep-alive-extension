@@ -14,5 +14,12 @@
   "openDevToolsDesc": "Networkタブでリクエストを表示する",
   "devToolsOpened": "DevTools<br>開きました ✓",
   "language": "言語",
+  "copyMode": "📋 コピーモード",
+  "copyModeTitle": "コピーモード",
+  "copyModeHelp": "💡 コピーモード有効: テキスト/ボタンにホバーしてクリックすると自動コピー",
+  "copiedText": "コピーしました！",
+  "copyModeOn": "📋 コピーモードをオフ",
+  "copyModeOff": "📋 コピーモードをオン",
+  "showCopyIndicator": "ページにボタンを表示",
   "copyright": "© Đoàn Duy Nhất"
 }

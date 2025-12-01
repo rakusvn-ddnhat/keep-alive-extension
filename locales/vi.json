@@ -14,5 +14,12 @@
   "openDevToolsDesc": "nếu muốn xem requests trong tab Network",
   "devToolsOpened": "Đã mở<br>DevTools ✓",
   "language": "Ngôn ngữ",
+  "copyMode": "📋 Copy Mode",
+  "copyModeTitle": "Copy Mode",
+  "copyModeHelp": "💡 Bật Copy Mode: Hover vào text/button rồi click sẽ tự động copy",
+  "copiedText": "Đã copy!",
+  "copyModeOn": "📋 Tắt Copy Mode",
+  "copyModeOff": "📋 Bật Copy Mode",
+  "showCopyIndicator": "Hiện nút trên trang",
   "copyright": "© Đoàn Duy Nhất"
 }
