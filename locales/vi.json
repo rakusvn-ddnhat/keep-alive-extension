@@ -67,5 +67,7 @@
   "scriptsHaveUpdates": "script(s) có bản cập nhật!",
   "enterScriptUrl": "Vui lòng nhập URL script",
   "confirmRemoveScript": "Xóa script này?",
+  "runInIframes": "🖼️ Chạy trong iframe",
+  "runInIframesHelp": "Tắt nếu chỉ muốn script chạy ở trang chính",
   "copyright": "© Đoàn Duy Nhất"
 }

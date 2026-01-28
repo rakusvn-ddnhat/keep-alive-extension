@@ -67,5 +67,7 @@
   "scriptsHaveUpdates": "script(s) have updates!",
   "enterScriptUrl": "Please enter script URL",
   "confirmRemoveScript": "Remove this script?",
+  "runInIframes": "🖼️ Run in iframes",
+  "runInIframesHelp": "Turn off to run script only in main page",
   "copyright": "© Doan Duy Nhat"
 }

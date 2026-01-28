@@ -67,5 +67,7 @@
   "scriptsHaveUpdates": "スクリプトに更新があります！",
   "enterScriptUrl": "スクリプトURLを入力してください",
   "confirmRemoveScript": "このスクリプトを削除しますか？",
+  "runInIframes": "🖼️ iframeで実行",
+  "runInIframesHelp": "メインページのみで実行する場合はオフ",
   "copyright": "© Đoàn Duy Nhất"
 }

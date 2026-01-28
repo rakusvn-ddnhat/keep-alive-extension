@@ -512,11 +512,27 @@
   let lastFormattedResponse = '';
   let currentViewMode = 'pretty';
 
+  // HTTP Status Text mapping
+  const HTTP_STATUS_TEXT = {
+    200: 'OK', 201: 'Created', 202: 'Accepted', 204: 'No Content',
+    301: 'Moved Permanently', 302: 'Found', 304: 'Not Modified',
+    400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404: 'Not Found',
+    405: 'Method Not Allowed', 408: 'Request Timeout', 409: 'Conflict',
+    500: 'Internal Server Error', 501: 'Not Implemented', 502: 'Bad Gateway',
+    503: 'Service Unavailable', 504: 'Gateway Timeout'
+  };
+
   // Display response
   function displayResponse(status, statusText, time, size, body, headers) {
+    // Fix duplicate status text (e.g., "200 200" -> "200 OK")
+    let finalStatusText = statusText;
+    if (!statusText || statusText === String(status) || statusText === '') {
+      finalStatusText = HTTP_STATUS_TEXT[status] || 'Unknown';
+    }
+    
     // Status
     responseStatus.style.display = 'flex';
-    statusCode.textContent = `${status} ${statusText}`;
+    statusCode.textContent = `${status} ${finalStatusText}`;
     statusCode.className = 'status-code';
     if (status >= 200 && status < 300) statusCode.classList.add('status-2xx');
     else if (status >= 300 && status < 400) statusCode.classList.add('status-3xx');

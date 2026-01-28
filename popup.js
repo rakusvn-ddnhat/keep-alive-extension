@@ -941,9 +941,9 @@ document.addEventListener('DOMContentLoaded', () => {
           <div style="margin-bottom: 12px; padding: 8px; background: #f5f5f5; border-radius: 4px;">
             <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer;">
               <input type="checkbox" id="runInIframesCheckbox" ${script.runInIframes !== false ? 'checked' : ''}>
-              <span>🖼️ Chạy trong iframe</span>
+              <span>${messages['runInIframes'] || '🖼️ Chạy trong iframe'}</span>
             </label>
-            <div style="font-size: 9px; color: #888; margin-top: 3px; margin-left: 22px;">Tắt nếu chỉ muốn script chạy ở trang chính</div>
+            <div style="font-size: 9px; color: #888; margin-top: 3px; margin-left: 22px;">${messages['runInIframesHelp'] || 'Tắt nếu chỉ muốn script chạy ở trang chính'}</div>
           </div>
           <div id="varsContainer">
             ${script.variables.map((v, i) => `
