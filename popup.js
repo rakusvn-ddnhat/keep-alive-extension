@@ -203,6 +203,113 @@ document.addEventListener('DOMContentLoaded', () => {
     versionDisplay.textContent = 'v' + manifest.version;
   }
   
+  // ==================== CHECK FOR UPDATES ====================
+  const GITHUB_REPO = 'rakusvn-ddnhat/keep-alive-extension';
+  const GITHUB_MANIFEST_URL = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/manifest.json`;
+  const GITHUB_DOWNLOAD_URL = `https://github.com/${GITHUB_REPO}/archive/refs/heads/main.zip`;
+  
+  const checkUpdateBtn = document.getElementById('checkUpdateBtn');
+  const updateStatus = document.getElementById('updateStatus');
+  
+  // Compare version strings (e.g., "0.0.3" vs "0.0.4")
+  function compareVersions(current, latest) {
+    const c = current.split('.').map(Number);
+    const l = latest.split('.').map(Number);
+    for (let i = 0; i < Math.max(c.length, l.length); i++) {
+      const cv = c[i] || 0;
+      const lv = l[i] || 0;
+      if (lv > cv) return 1;  // latest > current
+      if (lv < cv) return -1; // latest < current
+    }
+    return 0; // equal
+  }
+  
+  async function checkForUpdates() {
+    if (!updateStatus) return;
+    
+    updateStatus.style.display = 'block';
+    updateStatus.innerHTML = '⏳ ' + (messages['checking'] || 'Đang kiểm tra...');
+    updateStatus.style.color = '#888';
+    
+    try {
+      const response = await fetch(GITHUB_MANIFEST_URL + '?t=' + Date.now(), {
+        cache: 'no-store'
+      });
+      
+      if (!response.ok) throw new Error('Failed to fetch');
+      
+      const remoteManifest = await response.json();
+      const currentVersion = chrome.runtime.getManifest().version;
+      const latestVersion = remoteManifest.version;
+      
+      const cmp = compareVersions(currentVersion, latestVersion);
+      
+      if (cmp > 0) {
+        // New version available - auto download
+        updateStatus.innerHTML = `
+          🎉 <b>${messages['newVersionAvailable'] || 'Có bản mới!'}</b> v${latestVersion}<br>
+          <span style="font-size: 10px;">⏳ ${messages['downloading'] || 'Đang tải xuống...'}</span>
+        `;
+        updateStatus.style.color = '#4CAF50';
+        
+        // Trigger download via background script
+        chrome.runtime.sendMessage({
+          action: 'downloadUpdate',
+          url: GITHUB_DOWNLOAD_URL,
+          filename: `DevToolbox-v${latestVersion}.zip`
+        }, (result) => {
+          if (result && result.success) {
+            updateStatus.innerHTML = `
+              ✅ <b>${messages['downloadComplete'] || 'Đã tải xong!'}</b><br>
+              <div style="font-size: 10px; margin-top: 6px; padding: 8px; background: #f5f5f5; border-radius: 4px; text-align: left;">
+                <b>${messages['updateSteps'] || 'Các bước cập nhật:'}</b><br>
+                1️⃣ Mở file ZIP vừa tải<br>
+                2️⃣ Giải nén đè lên folder extension<br>
+                3️⃣ Vào <a href="#" id="openExtensions" style="color: #2196F3;">chrome://extensions</a><br>
+                4️⃣ Bấm 🔄 Reload extension
+              </div>
+            `;
+            // Add click handler for chrome://extensions link
+            setTimeout(() => {
+              const openExtLink = document.getElementById('openExtensions');
+              if (openExtLink) {
+                openExtLink.addEventListener('click', (e) => {
+                  e.preventDefault();
+                  chrome.tabs.create({ url: 'chrome://extensions' });
+                });
+              }
+            }, 100);
+          } else {
+            // Fallback to manual download link
+            updateStatus.innerHTML = `
+              🎉 <b>${messages['newVersionAvailable'] || 'Có bản mới!'}</b> v${latestVersion}<br>
+              <a href="${GITHUB_DOWNLOAD_URL}" target="_blank" style="color: #2196F3; text-decoration: underline;">
+                📥 ${messages['downloadNow'] || 'Tải về ngay'}
+              </a>
+            `;
+          }
+        });
+      } else {
+        // Already up to date
+        updateStatus.innerHTML = '✅ ' + (messages['upToDate'] || 'Đã là phiên bản mới nhất!') + ` (v${currentVersion})`;
+        updateStatus.style.color = '#4CAF50';
+        
+        // Auto hide after 3 seconds
+        setTimeout(() => {
+          updateStatus.style.display = 'none';
+        }, 3000);
+      }
+    } catch (error) {
+      console.error('Check update error:', error);
+      updateStatus.innerHTML = '❌ ' + (messages['updateCheckFailed'] || 'Không thể kiểm tra. Kiểm tra kết nối mạng.');
+      updateStatus.style.color = '#f44336';
+    }
+  }
+  
+  if (checkUpdateBtn) {
+    checkUpdateBtn.addEventListener('click', checkForUpdates);
+  }
+  
   // Set global references
   exportCurlBtn = document.getElementById('exportCurl');
   exportJMeterBtn = document.getElementById('exportJMeter');

@@ -68,6 +68,17 @@
   "enterScriptUrl": "スクリプトURLを入力してください",
   "confirmRemoveScript": "このスクリプトを削除しますか？",
   "runInIframes": "🖼️ iframeで実行",
-  "runInIframesHelp": "メインページのみで実行する場合はオフ",
+  "runInIframesHelp": "メインページのみで実行する場合はオフにしてください",
+  "checkUpdates": "拡張機能を更新",
+  "checkNow": "確認",
+  "checking": "確認中...",
+  "newVersionAvailable": "新しいバージョンがあります！",
+  "downloadNow": "今すぐダウンロード",
+  "updateInstructions": "解凍して古いフォルダに上書き、chrome://extensionsでリロード",
+  "upToDate": "最新バージョンです！",
+  "updateCheckFailed": "確認できません。ネット接続を確認してください。",
+  "downloading": "ダウンロード中...",
+  "downloadComplete": "ダウンロード完了！",
+  "updateSteps": "更新手順：",
   "copyright": "© Đoàn Duy Nhất"
 }

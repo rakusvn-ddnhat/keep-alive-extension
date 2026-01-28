@@ -285,6 +285,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       executeUserScriptInTab(sender.tab.id, sender.frameId, message.scriptContent, message.scriptName)
         .then(result => sendResponse(result));
       return true;
+    } else if (message.action === 'downloadUpdate') {
+      // Download extension update ZIP
+      chrome.downloads.download({
+        url: message.url,
+        filename: message.filename || 'DevToolbox-update.zip',
+        saveAs: true
+      }, (downloadId) => {
+        if (chrome.runtime.lastError) {
+          console.error('[Background] Download error:', chrome.runtime.lastError);
+          sendResponse({ success: false, error: chrome.runtime.lastError.message });
+        } else {
+          console.log('[Background] Download started:', downloadId);
+          sendResponse({ success: true, downloadId });
+        }
+      });
+      return true;
     }
   } catch (error) {
     console.error('[Background] Error handling message:', error);

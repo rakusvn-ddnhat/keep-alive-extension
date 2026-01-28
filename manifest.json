@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Dev Toolbox",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Chặn đóng tab, Record Requests, Copy Mode, Translate Mode, Thước kẻ màn hình, API Tester, Zabbix PDF, Script Loader. © Đoàn Duy Nhất",
   "permissions": [
     "storage",

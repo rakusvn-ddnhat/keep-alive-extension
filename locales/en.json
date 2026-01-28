@@ -69,5 +69,16 @@
   "confirmRemoveScript": "Remove this script?",
   "runInIframes": "🖼️ Run in iframes",
   "runInIframesHelp": "Turn off to run script only in main page",
+  "checkUpdates": "Update Extension",
+  "checkNow": "Check",
+  "checking": "Checking...",
+  "newVersionAvailable": "New version available!",
+  "downloadNow": "Download now",
+  "updateInstructions": "Extract and overwrite old folder, then go to chrome://extensions and reload",
+  "upToDate": "You're up to date!",
+  "updateCheckFailed": "Cannot check. Please check your internet connection.",
+  "downloading": "Downloading...",
+  "downloadComplete": "Download complete!",
+  "updateSteps": "Update steps:",
   "copyright": "© Doan Duy Nhat"
 }

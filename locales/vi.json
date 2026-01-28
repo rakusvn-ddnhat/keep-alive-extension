@@ -69,5 +69,16 @@
   "confirmRemoveScript": "Xóa script này?",
   "runInIframes": "🖼️ Chạy trong iframe",
   "runInIframesHelp": "Tắt nếu chỉ muốn script chạy ở trang chính",
+  "checkUpdates": "Cập nhật Extension",
+  "checkNow": "Kiểm tra",
+  "checking": "Đang kiểm tra...",
+  "newVersionAvailable": "Có bản mới!",
+  "downloadNow": "Tải về ngay",
+  "updateInstructions": "Giải nén đè lên folder cũ, rồi vào chrome://extensions reload lại",
+  "upToDate": "Đã là phiên bản mới nhất!",
+  "updateCheckFailed": "Không thể kiểm tra. Kiểm tra kết nối mạng.",
+  "downloading": "Đang tải xuống...",
+  "downloadComplete": "Đã tải xong!",
+  "updateSteps": "Các bước cập nhật:",
   "copyright": "© Đoàn Duy Nhất"
 }
