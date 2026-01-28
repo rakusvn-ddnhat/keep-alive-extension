@@ -6,6 +6,90 @@ let messages = {};
 let requestCountElement = null;
 let exportCurlBtn = null;
 let exportJMeterBtn = null;
+let requestListElement = null;
+let allRequests = [];
+
+// Generate cURL command from request
+function generateCurl(request) {
+  let curl = `curl '${request.url}'`;
+  
+  if (request.method !== 'GET') {
+    curl += ` -X ${request.method}`;
+  }
+  
+  if (request.headers) {
+    for (const [name, value] of Object.entries(request.headers)) {
+      if (name.toLowerCase() !== 'content-length') {
+        curl += ` \\\n  -H '${name}: ${value}'`;
+      }
+    }
+  }
+  
+  if (request.body) {
+    const bodyStr = typeof request.body === 'string' ? request.body : JSON.stringify(request.body);
+    curl += ` \\\n  -d '${bodyStr.replace(/'/g, "\\'")}'`;
+  }
+  
+  return curl;
+}
+
+// Render request list
+function renderRequestList() {
+  if (!requestListElement) return;
+  
+  if (allRequests.length === 0) {
+    requestListElement.innerHTML = '<div style="padding: 15px; text-align: center; color: #888; font-size: 11px;">Chưa có request nào</div>';
+    return;
+  }
+  
+  requestListElement.innerHTML = allRequests.map((req, index) => {
+    const methodClass = `method-${req.method}`;
+    const shortUrl = req.url.length > 40 ? req.url.substring(0, 40) + '...' : req.url;
+    return `
+      <div class="request-item" data-index="${index}">
+        <span class="request-method ${methodClass}">${req.method}</span>
+        <span class="request-url" title="${req.url}">${shortUrl}</span>
+        <div class="request-actions">
+          <button class="btn-copy" title="Copy cURL" data-action="copy">📋</button>
+          <button class="btn-test" title="Test trong API Tester" data-action="test">🚀</button>
+          <button class="btn-del" title="Xóa" data-action="delete">✕</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  // Add event listeners
+  requestListElement.querySelectorAll('.request-item').forEach(item => {
+    item.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const index = parseInt(item.dataset.index);
+        const action = btn.dataset.action;
+        const request = allRequests[index];
+        
+        if (action === 'copy') {
+          const curl = generateCurl(request);
+          navigator.clipboard.writeText(curl).then(() => {
+            btn.textContent = '✓';
+            setTimeout(() => btn.textContent = '📋', 1000);
+          });
+        } else if (action === 'test') {
+          // Open API Tester với request này
+          const curl = generateCurl(request);
+          chrome.storage.local.set({ pendingCurl: curl }, () => {
+            chrome.tabs.create({ url: chrome.runtime.getURL('api-tester.html') });
+          });
+        } else if (action === 'delete') {
+          allRequests.splice(index, 1);
+          chrome.runtime.sendMessage({ action: 'updateRequests', requests: allRequests }, () => {
+            renderRequestList();
+            updateRequestCount();
+          });
+        }
+      });
+    });
+  });
+}
 
 // Global updateRequestCount function
 function updateRequestCount() {
@@ -18,6 +102,8 @@ function updateRequestCount() {
       requestCountElement.innerHTML = `0 <span data-i18n="requestsRecorded">${recordedText}</span>`;
       if (exportCurlBtn) exportCurlBtn.disabled = true;
       if (exportJMeterBtn) exportJMeterBtn.disabled = true;
+      allRequests = [];
+      renderRequestList();
       return;
     }
     
@@ -26,14 +112,18 @@ function updateRequestCount() {
       requestCountElement.innerHTML = `0 <span data-i18n="requestsRecorded">${recordedText}</span>`;
       if (exportCurlBtn) exportCurlBtn.disabled = true;
       if (exportJMeterBtn) exportJMeterBtn.disabled = true;
+      allRequests = [];
+      renderRequestList();
       return;
     }
     
+    allRequests = response.requests;
     const count = response.requests.length;
     const recordedText = messages.requestsRecorded || 'requests recorded';
     requestCountElement.innerHTML = `${count} <span data-i18n="requestsRecorded">${recordedText}</span>`;
     if (exportCurlBtn) exportCurlBtn.disabled = count === 0;
     if (exportJMeterBtn) exportJMeterBtn.disabled = count === 0;
+    renderRequestList();
   });
 }
 
@@ -87,6 +177,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const showCopyIndicatorToggle = document.getElementById('showCopyIndicatorToggle');
   const versionDisplay = document.getElementById('versionDisplay');
   
+  // Translate Mode elements
+  const translateModeToggle = document.getElementById('translateModeToggle');
+  const showTranslateIndicatorToggle = document.getElementById('showTranslateIndicatorToggle');
+  const translateOnHoverToggle = document.getElementById('translateOnHoverToggle');
+  const translateTargetLang = document.getElementById('translateTargetLang');
+  
+  // Google Sheets Highlighter elements
+  const sheetsHighlightToggle = document.getElementById('sheetsHighlightToggle');
+  const highlightModeSelect = document.getElementById('highlightModeSelect');
+  const highlightColorPicker = document.getElementById('highlightColorPicker');
+  const highlightColorValue = document.getElementById('highlightColorValue');
+  
   // Hiển thị version từ manifest
   if (versionDisplay) {
     const manifest = chrome.runtime.getManifest();
@@ -97,6 +199,21 @@ document.addEventListener('DOMContentLoaded', () => {
   exportCurlBtn = document.getElementById('exportCurl');
   exportJMeterBtn = document.getElementById('exportJMeter');
   requestCountElement = document.getElementById('requestCount');
+  requestListElement = document.getElementById('requestList');
+  
+  // Toggle request list visibility
+  const toggleRequestListBtn = document.getElementById('toggleRequestList');
+  if (toggleRequestListBtn) {
+    toggleRequestListBtn.addEventListener('click', () => {
+      if (requestListElement.style.display === 'none') {
+        requestListElement.style.display = 'block';
+        toggleRequestListBtn.textContent = '📋 Ẩn';
+      } else {
+        requestListElement.style.display = 'none';
+        toggleRequestListBtn.textContent = '📋 Xem';
+      }
+    });
+  }
   
   // Load saved language
   chrome.storage.local.get(['language'], (result) => {
@@ -111,7 +228,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Load saved state
-  chrome.storage.local.get(['isEnabled', 'isRecording', 'domainFilter', 'showIndicator', 'copyModeEnabled', 'showCopyIndicator'], (result) => {
+  chrome.storage.local.get(['isEnabled', 'isRecording', 'domainFilter', 'showIndicator', 'copyModeEnabled', 'showCopyIndicator', 'translateModeEnabled', 'showTranslateIndicator', 'translateOnHover', 'translateTargetLang', 'sheetsHighlightEnabled', 'highlightMode', 'highlightColor'], (result) => {
     toggleBtn.checked = result.isEnabled || false;
     recordBtn.checked = result.isRecording || false;
     
@@ -125,6 +242,34 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load show copy indicator state
     const showCopyIndicator = result.showCopyIndicator !== undefined ? result.showCopyIndicator : true;
     showCopyIndicatorToggle.checked = showCopyIndicator;
+    
+    // Load translate mode state
+    if (translateModeToggle) {
+      translateModeToggle.checked = result.translateModeEnabled || false;
+    }
+    if (showTranslateIndicatorToggle) {
+      showTranslateIndicatorToggle.checked = result.showTranslateIndicator !== undefined ? result.showTranslateIndicator : true;
+    }
+    if (translateOnHoverToggle) {
+      translateOnHoverToggle.checked = result.translateOnHover || false;
+    }
+    if (translateTargetLang) {
+      translateTargetLang.value = result.translateTargetLang || 'en';
+    }
+    
+    // Load Sheets Highlight state
+    if (sheetsHighlightToggle) {
+      sheetsHighlightToggle.checked = result.sheetsHighlightEnabled || false;
+    }
+    if (highlightModeSelect) {
+      highlightModeSelect.value = result.highlightMode || 'row';
+    }
+    if (highlightColorPicker) {
+      highlightColorPicker.value = result.highlightColor || '#fff3cd';
+      if (highlightColorValue) {
+        highlightColorValue.textContent = result.highlightColor || '#fff3cd';
+      }
+    }
     
     // Nếu chưa có domain filter, lấy domain của tab hiện tại
     if (!result.domainFilter || result.domainFilter === '') {
@@ -202,6 +347,81 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.storage.local.set({ showCopyIndicator: showCopyIndicator });
   });
 
+  // ==================== TRANSLATE MODE ====================
+  
+  // Toggle Translate Mode
+  if (translateModeToggle) {
+    translateModeToggle.addEventListener('change', () => {
+      const translateModeEnabled = translateModeToggle.checked;
+      chrome.storage.local.set({ translateModeEnabled: translateModeEnabled });
+      
+      // Gửi message tới content script
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]) {
+          chrome.tabs.sendMessage(tabs[0].id, { 
+            action: 'toggleTranslateMode', 
+            enabled: translateModeEnabled 
+          }).catch(() => {
+            console.log('[Popup] Content script not ready, using storage instead');
+          });
+        }
+      });
+    });
+  }
+  
+  // Checkbox hiển thị nút Translate Mode trên trang
+  if (showTranslateIndicatorToggle) {
+    showTranslateIndicatorToggle.addEventListener('change', () => {
+      const showTranslateIndicator = showTranslateIndicatorToggle.checked;
+      chrome.storage.local.set({ showTranslateIndicator: showTranslateIndicator });
+    });
+  }
+  
+  // Checkbox tự động dịch khi hover
+  if (translateOnHoverToggle) {
+    translateOnHoverToggle.addEventListener('change', () => {
+      const translateOnHover = translateOnHoverToggle.checked;
+      chrome.storage.local.set({ translateOnHover: translateOnHover });
+    });
+  }
+  
+  // Chọn ngôn ngữ đích
+  if (translateTargetLang) {
+    translateTargetLang.addEventListener('change', () => {
+      chrome.storage.local.set({ translateTargetLang: translateTargetLang.value });
+    });
+  }
+
+  // ==================== GOOGLE SHEETS HIGHLIGHTER ====================
+  
+  // Toggle Sheets Highlight
+  if (sheetsHighlightToggle) {
+    sheetsHighlightToggle.addEventListener('change', () => {
+      const enabled = sheetsHighlightToggle.checked;
+      chrome.storage.local.set({ sheetsHighlightEnabled: enabled });
+    });
+  }
+  
+  // Chọn chế độ highlight
+  if (highlightModeSelect) {
+    highlightModeSelect.addEventListener('change', () => {
+      chrome.storage.local.set({ highlightMode: highlightModeSelect.value });
+    });
+  }
+  
+  // Chọn màu highlight
+  if (highlightColorPicker) {
+    highlightColorPicker.addEventListener('input', () => {
+      const color = highlightColorPicker.value;
+      chrome.storage.local.set({ highlightColor: color });
+      if (highlightColorValue) {
+        highlightColorValue.textContent = color;
+      }
+    });
+  }
+  
+  // ==================== CHAT NOTIFIER ====================
+  
   // Save state on change - Recording
   recordBtn.addEventListener('change', () => {
     const isRecording = recordBtn.checked;
@@ -301,4 +521,179 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
   });
+
+  // ==================== API TESTER ====================
+  
+  // Open API Tester in new tab
+  const openApiTesterBtn = document.getElementById('openApiTester');
+  if (openApiTesterBtn) {
+    openApiTesterBtn.addEventListener('click', () => {
+      chrome.tabs.create({ url: chrome.runtime.getURL('api-tester.html') });
+    });
+  }
+
+  // ==================== ZABBIX CHARTS DOWNLOADER ====================
+  
+  const zabbixChartCount = document.getElementById('zabbixChartCount');
+  const downloadZabbixImages = document.getElementById('downloadZabbixImages');
+  const downloadZabbixPdf = document.getElementById('downloadZabbixPdf');
+  const zabbixDownloadStatus = document.getElementById('zabbixDownloadStatus');
+
+  // Check if current page has Zabbix charts
+  function checkZabbixCharts() {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (!tabs[0]) return;
+      
+      chrome.scripting.executeScript({
+        target: { tabId: tabs[0].id },
+        func: () => {
+          const charts = document.querySelectorAll('#charts img, .flickerfreescreen img');
+          return charts.length;
+        }
+      }).then(results => {
+        const count = results[0]?.result || 0;
+        if (count > 0) {
+          zabbixChartCount.textContent = `(${count} charts)`;
+          zabbixChartCount.style.color = '#4CAF50';
+        } else {
+          zabbixChartCount.textContent = '(Không có charts)';
+          zabbixChartCount.style.color = '#999';
+        }
+      }).catch(() => {
+        zabbixChartCount.textContent = '';
+      });
+    });
+  }
+
+  // Show status
+  function showZabbixStatus(message, type = '') {
+    zabbixDownloadStatus.textContent = message;
+    zabbixDownloadStatus.className = 'download-status show ' + type;
+  }
+
+  // Download all images
+  downloadZabbixImages.addEventListener('click', () => {
+    showZabbixStatus('⏳ Đang tải...');
+    
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (!tabs[0]) return;
+      
+      chrome.scripting.executeScript({
+        target: { tabId: tabs[0].id },
+        func: async () => {
+          const images = document.querySelectorAll('#charts img, .flickerfreescreen img');
+          if (images.length === 0) {
+            return { success: false, error: 'Không tìm thấy charts' };
+          }
+          
+          let downloaded = 0;
+          for (let i = 0; i < images.length; i++) {
+            const img = images[i];
+            const src = img.src;
+            
+            let name = 'chart_' + (i + 1);
+            const graphMatch = src.match(/graphid=(\d+)/);
+            const itemMatch = src.match(/itemids%5B%5D=(\d+)/);
+            
+            if (graphMatch) name = 'graph_' + graphMatch[1];
+            else if (itemMatch) name = 'item_' + itemMatch[1];
+            
+            try {
+              const response = await fetch(src);
+              const blob = await response.blob();
+              const url = URL.createObjectURL(blob);
+              
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = name + '.png';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+              
+              downloaded++;
+              await new Promise(r => setTimeout(r, 300));
+            } catch (e) {
+              console.error('Error downloading:', name, e);
+            }
+          }
+          
+          return { success: true, count: downloaded };
+        }
+      }).then(results => {
+        const result = results[0]?.result;
+        if (result?.success) {
+          showZabbixStatus(`✅ Đã tải ${result.count} ảnh!`, 'success');
+        } else {
+          showZabbixStatus('❌ ' + (result?.error || 'Lỗi'), 'error');
+        }
+      }).catch(err => {
+        showZabbixStatus('❌ ' + err.message, 'error');
+      });
+    });
+  });
+
+  // Download as PDF - collect images and open PDF generator page
+  downloadZabbixPdf.addEventListener('click', () => {
+    showZabbixStatus('⏳ Đang thu thập ảnh...');
+    
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (!tabs[0]) return;
+      
+      chrome.scripting.executeScript({
+        target: { tabId: tabs[0].id },
+        func: async () => {
+          const images = document.querySelectorAll('#charts img, .flickerfreescreen img');
+          if (images.length === 0) {
+            return { success: false, error: 'Không tìm thấy charts' };
+          }
+          
+          const chartData = [];
+          
+          for (let i = 0; i < images.length; i++) {
+            const img = images[i];
+            const src = img.src;
+            
+            let name = 'Chart ' + (i + 1);
+            const graphMatch = src.match(/graphid=(\d+)/);
+            const itemMatch = src.match(/itemids%5B%5D=(\d+)/);
+            if (graphMatch) name = 'Graph ID: ' + graphMatch[1];
+            else if (itemMatch) name = 'Item ID: ' + itemMatch[1];
+            
+            try {
+              const response = await fetch(src);
+              const blob = await response.blob();
+              const base64 = await new Promise(resolve => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.readAsDataURL(blob);
+              });
+              
+              chartData.push({ name, base64 });
+            } catch (e) {
+              console.error('Error fetching:', name, e);
+            }
+          }
+          
+          return { success: true, charts: chartData };
+        }
+      }).then(results => {
+        const result = results[0]?.result;
+        if (result?.success && result.charts?.length > 0) {
+          // Save to storage and open PDF generator
+          chrome.storage.local.set({ zabbixCharts: result.charts }, () => {
+            chrome.tabs.create({ url: chrome.runtime.getURL('zabbix-pdf.html') });
+            showZabbixStatus(`✅ Thu thập ${result.charts.length} charts, đang mở PDF...`, 'success');
+          });
+        } else {
+          showZabbixStatus('❌ ' + (result?.error || 'Không có charts'), 'error');
+        }
+      }).catch(err => {
+        showZabbixStatus('❌ ' + err.message, 'error');
+      });
+    });
+  });
+
+  // Check for charts when popup opens
+  checkZabbixCharts();
 });

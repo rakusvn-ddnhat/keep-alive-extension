@@ -22,6 +22,38 @@
     .btn-danger:hover { background: #da190b; }
     .status { font-size: 11px; color: #999; text-align: center; margin: 5px 0; }
     select { padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer; }
+    /* Request List Styles */
+    .request-list { max-height: 200px; overflow-y: auto; margin: 8px 0; border: 1px solid #e0e0e0; border-radius: 6px; }
+    .request-item { display: flex; align-items: center; padding: 6px 8px; border-bottom: 1px solid #f0f0f0; font-size: 11px; gap: 6px; }
+    .request-item:last-child { border-bottom: none; }
+    .request-item:hover { background: #f5f5f5; }
+    .request-method { font-weight: bold; font-size: 10px; padding: 2px 5px; border-radius: 3px; min-width: 36px; text-align: center; }
+    .method-GET { background: #e3f2fd; color: #1976d2; }
+    .method-POST { background: #fff3e0; color: #f57c00; }
+    .method-PUT { background: #e8f5e9; color: #388e3c; }
+    .method-DELETE { background: #ffebee; color: #d32f2f; }
+    .method-PATCH { background: #f3e5f5; color: #7b1fa2; }
+    .request-url { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #333; font-family: monospace; font-size: 10px; }
+    .request-actions { display: flex; gap: 4px; }
+    .request-actions button { padding: 3px 6px; font-size: 10px; border: none; border-radius: 3px; cursor: pointer; }
+    .btn-copy { background: #e3f2fd; color: #1976d2; }
+    .btn-test { background: #e8f5e9; color: #388e3c; }
+    .btn-del { background: #ffebee; color: #d32f2f; }
+    .btn-copy:hover { background: #bbdefb; }
+    .btn-test:hover { background: #c8e6c9; }
+    .btn-del:hover { background: #ffcdd2; }
+    .toggle-list-btn { font-size: 11px; padding: 4px 8px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; margin-right: 8px; }
+    .toggle-list-btn:hover { background: #e0e0e0; }
+    .btn-zabbix { background: linear-gradient(135deg, #ff5722, #e64a19); }
+    .btn-zabbix:hover { background: linear-gradient(135deg, #e64a19, #d84315); }
+    .btn-pdf { background: linear-gradient(135deg, #9c27b0, #7b1fa2); }
+    .btn-pdf:hover { background: linear-gradient(135deg, #7b1fa2, #6a1b9a); }
+    .zabbix-btns { display: flex; gap: 5px; margin-top: 8px; }
+    .zabbix-btns .btn { flex: 1; font-size: 11px; padding: 6px 8px; }
+    .download-status { font-size: 10px; color: #666; text-align: center; margin-top: 5px; display: none; }
+    .download-status.show { display: block; }
+    .download-status.success { color: #4CAF50; }
+    .download-status.error { color: #f44336; }
   </style>
 </head>
 <body>
@@ -68,6 +100,96 @@
 
   <div class="section">
     <div class="container">
+      <span data-i18n="translateMode">🌐 Translate Mode</span>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <label title="Ẩn/hiện nút trên trang" style="cursor: pointer; font-size: 14px;">
+          <input type="checkbox" id="showTranslateIndicatorToggle" checked style="cursor: pointer;">
+          👁️
+        </label>
+        <label title="Hiện bản dịch khi hover" style="cursor: pointer; font-size: 14px;">
+          <input type="checkbox" id="translateOnHoverToggle" style="cursor: pointer;">
+          🔄
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="translateModeToggle">
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+    <div class="container" style="margin-top: 8px;">
+      <span style="font-size: 11px; color: #666;" data-i18n="translateTo">Dịch sang:</span>
+      <select id="translateTargetLang" style="padding: 4px 8px; font-size: 11px;">
+        <option value="en">English</option>
+        <option value="vi">Tiếng Việt</option>
+      </select>
+    </div>
+    <p style="font-size: 10px; color: #888; margin: 8px 0; line-height: 1.4;" data-i18n="translateModeHelp">
+      💡 Hover vào text để xem bản dịch. 🔄 = tự động dịch khi hover
+    </p>
+    <div id="translateModelStatus" style="font-size: 10px; color: #666; margin: 5px 0; padding: 6px 8px; background: linear-gradient(135deg, #e3f2fd, #f3e5f5); border-radius: 6px; border-left: 3px solid #2196F3;">
+      📖 Offline: <strong>~250+</strong> từ | 🌐 Google Translate
+    </div>
+  </div>
+
+  <!-- Google Sheets Highlighter Section -->
+  <div class="section">
+    <div class="container">
+      <span data-i18n="sheetsHighlight">📊 Sheets Highlight</span>
+      <label class="switch">
+        <input type="checkbox" id="sheetsHighlightToggle">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="container" style="margin-top: 8px;">
+      <span style="font-size: 11px; color: #666;" data-i18n="highlightMode">Chế độ:</span>
+      <select id="highlightModeSelect" style="padding: 4px 8px; font-size: 11px;">
+        <option value="row">Tô dòng</option>
+        <option value="column">Tô cột</option>
+        <option value="both">Cả hai</option>
+        <option value="cross">Chữ thập</option>
+      </select>
+    </div>
+    <div class="container" style="margin-top: 8px;">
+      <span style="font-size: 11px; color: #666;" data-i18n="highlightColor">Màu:</span>
+      <input type="color" id="highlightColorPicker" value="#fff3cd" style="width: 40px; height: 24px; border: none; cursor: pointer;">
+      <span style="font-size: 10px; color: #888;" id="highlightColorValue">#fff3cd</span>
+    </div>
+    <p style="font-size: 10px; color: #888; margin: 8px 0; line-height: 1.4;" data-i18n="sheetsHighlightHelp">
+      💡 Click vào ô Google Sheets để tô màu dòng/cột
+    </p>
+  </div>
+
+  <!-- API Tester Section -->
+  <div class="section">
+    <div class="container">
+      <span>🚀 API Tester</span>
+      <button id="openApiTester" class="btn btn-secondary" style="width: auto; padding: 6px 12px; margin: 0;">
+        Mở
+      </button>
+    </div>
+    <p style="font-size: 10px; color: #888; margin: 8px 0; line-height: 1.4;">
+      💡 Import cURL, edit request, xem response như Postman
+    </p>
+  </div>
+
+  <!-- Zabbix Charts Downloader Section -->
+  <div class="section">
+    <div class="container">
+      <span>📊 Zabbix Charts</span>
+      <span id="zabbixChartCount" style="font-size: 11px; color: #888;"></span>
+    </div>
+    <p style="font-size: 10px; color: #888; margin: 8px 0; line-height: 1.4;">
+      💡 Tải tất cả charts từ trang Zabbix đang mở
+    </p>
+    <div class="zabbix-btns">
+      <button id="downloadZabbixImages" class="btn btn-zabbix">📥 Tải ảnh</button>
+      <button id="downloadZabbixPdf" class="btn btn-pdf">📄 Xuất PDF</button>
+    </div>
+    <div id="zabbixDownloadStatus" class="download-status"></div>
+  </div>
+
+  <div class="section">
+    <div class="container">
       <span data-i18n="recordRequests">Record Requests</span>
       <div style="display: flex; align-items: center; gap: 8px;">
         <label title="Ẩn/hiện nút trạng thái trên trang" style="cursor: pointer; font-size: 14px;">
@@ -87,14 +209,18 @@
       <input type="text" id="domainFilter" data-i18n-placeholder="filterDomain" placeholder="Nhập domain muốn record" style="flex: 1; padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
       <button id="getCurrentDomain" data-i18n="currentTab" style="padding: 6px 12px; border: 1px solid #2196F3; background: white; color: #2196F3; border-radius: 4px; cursor: pointer; font-size: 12px; white-space: nowrap;">Lấy domain</button>
     </div>
-    <div class="status" id="requestCount">0 <span data-i18n="requestsRecorded">requests đã ghi lại</span></div>
+    <div class="status" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+      <button class="toggle-list-btn" id="toggleRequestList">📋 Xem</button>
+      <span id="requestCount">0 <span data-i18n="requestsRecorded">requests đã ghi lại</span></span>
+    </div>
+    <div class="request-list" id="requestList" style="display: none;"></div>
     <button class="btn btn-secondary" id="exportJMeter" data-i18n="exportJMeter">Export JMeter</button>
     <button class="btn" id="exportCurl" data-i18n="exportCurl">Export cURL</button>
     <button class="btn btn-danger" id="clearRequests" data-i18n="clearAll">Xóa tất cả</button>
   </div>
   
   <p style="text-align: center; color: #999; font-size: 10px; margin-top: 15px;">
-    <span data-i18n="copyright">© Đoàn Duy Nhất</span> | <span id="versionDisplay">v0.0.1</span>
+    <span data-i18n="copyright">© Đoàn Duy Nhất</span> | <span id="versionDisplay">v0.0.2</span>
   </p>
   <script src="popup.js"></script>
 </body>

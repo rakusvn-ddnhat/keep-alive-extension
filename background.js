@@ -235,6 +235,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chrome.storage.local.set({ cachedRequests: [] }).catch(() => {});
       console.log('[Background] Cleared all recorded requests');
       sendResponse({ success: true });
+    } else if (message.action === 'updateRequests') {
+      // Cập nhật danh sách requests (khi xóa từng item)
+      recordedRequests = message.requests || [];
+      chrome.storage.local.set({ cachedRequests: recordedRequests }).catch(() => {});
+      console.log('[Background] Updated requests, now have:', recordedRequests.length);
+      sendResponse({ success: true });
     }
   } catch (error) {
     console.error('[Background] Error handling message:', error);

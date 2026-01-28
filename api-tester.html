@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>🚀 API Tester</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { 
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+      background: #1e1e1e; 
+      color: #d4d4d4; 
+      min-height: 100vh;
+      padding: 15px;
+    }
+    
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #333;
+    }
+    .header h1 { font-size: 18px; color: #569cd6; }
+    .header .actions { display: flex; gap: 8px; }
+    
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    .btn-primary { background: #0e639c; color: white; }
+    .btn-primary:hover { background: #1177bb; }
+    .btn-success { background: #388a34; color: white; }
+    .btn-success:hover { background: #45a049; }
+    .btn-secondary { background: #3c3c3c; color: #d4d4d4; border: 1px solid #555; }
+    .btn-secondary:hover { background: #4a4a4a; }
+    .btn-danger { background: #c42b1c; color: white; }
+    .btn-danger:hover { background: #e03e2f; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    
+    .request-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 15px;
+      background: #252526;
+      padding: 10px;
+      border-radius: 6px;
+    }
+    
+    .method-select {
+      padding: 10px 12px;
+      background: #3c3c3c;
+      border: 1px solid #555;
+      border-radius: 4px;
+      color: #d4d4d4;
+      font-size: 13px;
+      font-weight: bold;
+      cursor: pointer;
+      min-width: 90px;
+    }
+    .method-select option { background: #252526; }
+    .method-get { color: #4ec9b0; }
+    .method-post { color: #dcdcaa; }
+    .method-put { color: #569cd6; }
+    .method-delete { color: #f14c4c; }
+    .method-patch { color: #ce9178; }
+    
+    .url-input {
+      flex: 1;
+      padding: 10px 12px;
+      background: #3c3c3c;
+      border: 1px solid #555;
+      border-radius: 4px;
+      color: #d4d4d4;
+      font-size: 13px;
+      font-family: 'Consolas', monospace;
+    }
+    .url-input:focus { outline: none; border-color: #0e639c; }
+    
+    .send-btn {
+      padding: 10px 24px;
+      font-weight: bold;
+    }
+    
+    .main-content {
+      display: flex;
+      gap: 15px;
+      height: calc(100vh - 140px);
+    }
+    
+    .panel {
+      flex: 1;
+      background: #252526;
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    
+    .tabs {
+      display: flex;
+      background: #2d2d2d;
+      border-bottom: 1px solid #333;
+    }
+    .tab {
+      padding: 10px 16px;
+      cursor: pointer;
+      font-size: 12px;
+      color: #888;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .tab:hover { color: #d4d4d4; background: #333; }
+    .tab.active { color: #d4d4d4; border-bottom-color: #0e639c; background: #252526; }
+    
+    .tab-content {
+      flex: 1;
+      padding: 12px;
+      overflow: auto;
+      display: none;
+    }
+    .tab-content.active { display: block; }
+    
+    .key-value-editor {
+      width: 100%;
+    }
+    .kv-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+      align-items: center;
+    }
+    .kv-row input {
+      flex: 1;
+      padding: 8px 10px;
+      background: #3c3c3c;
+      border: 1px solid #444;
+      border-radius: 4px;
+      color: #d4d4d4;
+      font-size: 12px;
+    }
+    .kv-row input:focus { outline: none; border-color: #0e639c; }
+    .kv-row input::placeholder { color: #666; }
+    .kv-row .kv-checkbox { 
+      width: 18px; 
+      height: 18px; 
+      cursor: pointer;
+      accent-color: #0e639c;
+    }
+    .kv-row .kv-delete {
+      padding: 6px 10px;
+      background: transparent;
+      border: none;
+      color: #888;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .kv-row .kv-delete:hover { color: #f14c4c; }
+    
+    .add-row-btn {
+      padding: 6px 12px;
+      font-size: 11px;
+      margin-top: 5px;
+    }
+    
+    .body-editor {
+      width: 100%;
+      height: calc(100% - 50px);
+      padding: 12px;
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #d4d4d4;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 13px;
+      resize: none;
+      line-height: 1.5;
+    }
+    .body-editor:focus { outline: none; border-color: #0e639c; }
+    
+    .body-type-select {
+      margin-bottom: 10px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .body-type-select label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .body-type-select input[type="radio"] {
+      accent-color: #0e639c;
+    }
+    
+    .response-status {
+      padding: 8px 12px;
+      background: #2d2d2d;
+      border-bottom: 1px solid #333;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    .status-code { font-weight: bold; }
+    .status-2xx { color: #4ec9b0; }
+    .status-3xx { color: #dcdcaa; }
+    .status-4xx { color: #ce9178; }
+    .status-5xx { color: #f14c4c; }
+    .response-time { color: #888; }
+    .response-size { color: #888; }
+    
+    .response-body {
+      flex: 1;
+      padding: 12px;
+      overflow: auto;
+      background: #1e1e1e;
+      margin: 10px;
+      border-radius: 4px;
+      font-family: 'Consolas', monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    
+    .response-headers-list {
+      font-family: 'Consolas', monospace;
+      font-size: 12px;
+    }
+    .response-headers-list div {
+      padding: 4px 0;
+      border-bottom: 1px solid #333;
+    }
+    .response-headers-list .header-name { color: #9cdcfe; }
+    .response-headers-list .header-value { color: #ce9178; }
+    
+    .import-modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7);
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    .import-modal.show { display: flex; }
+    .import-modal-content {
+      background: #252526;
+      padding: 20px;
+      border-radius: 8px;
+      width: 600px;
+      max-width: 90%;
+    }
+    .import-modal h3 { margin-bottom: 15px; color: #569cd6; }
+    .import-textarea {
+      width: 100%;
+      height: 200px;
+      padding: 12px;
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #d4d4d4;
+      font-family: 'Consolas', monospace;
+      font-size: 12px;
+      resize: vertical;
+      margin-bottom: 15px;
+    }
+    .import-textarea:focus { outline: none; border-color: #0e639c; }
+    .import-actions { display: flex; gap: 10px; justify-content: flex-end; }
+    
+    .loading {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+      color: #888;
+    }
+    .loading.show { display: flex; }
+    .spinner {
+      width: 30px;
+      height: 30px;
+      border: 3px solid #333;
+      border-top-color: #0e639c;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-right: 10px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #666;
+      text-align: center;
+    }
+    .empty-state .icon { font-size: 48px; margin-bottom: 15px; }
+    
+    /* JSON Syntax Highlighting */
+    .json-key { color: #9cdcfe; }
+    .json-string { color: #ce9178; }
+    .json-number { color: #b5cea8; }
+    .json-boolean { color: #569cd6; }
+    .json-null { color: #569cd6; }
+    
+    /* Response view mode toggle */
+    .view-mode-toggle {
+      display: flex;
+      gap: 5px;
+      padding: 8px 12px;
+      background: #2d2d2d;
+      border-bottom: 1px solid #333;
+    }
+    .view-mode-btn {
+      padding: 4px 12px;
+      font-size: 11px;
+      background: #3c3c3c;
+      border: 1px solid #555;
+      border-radius: 4px;
+      color: #888;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .view-mode-btn:hover { background: #4a4a4a; color: #d4d4d4; }
+    .view-mode-btn.active { background: #0e639c; border-color: #0e639c; color: white; }
+    
+    /* Preview iframe */
+    .response-preview {
+      flex: 1;
+      margin: 10px;
+      border-radius: 4px;
+      background: white;
+      display: none;
+    }
+    .response-preview.active { display: block; }
+    .response-preview iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      border-radius: 4px;
+    }
+    
+    /* History */
+    .history-item {
+      padding: 10px;
+      margin-bottom: 8px;
+      background: #2d2d2d;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .history-item:hover { background: #383838; }
+    .history-item .method {
+      font-size: 11px;
+      font-weight: bold;
+      padding: 2px 6px;
+      border-radius: 3px;
+      margin-right: 8px;
+    }
+    .history-item .url {
+      font-size: 12px;
+      color: #888;
+      word-break: break-all;
+    }
+    .history-item .time {
+      font-size: 10px;
+      color: #555;
+      margin-top: 5px;
+    }
+    
+    /* Records list styles */
+    .record-item {
+      padding: 12px;
+      margin-bottom: 8px;
+      background: #2d2d2d;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 1px solid transparent;
+    }
+    .record-item:hover { 
+      background: #383838; 
+      border-color: #0e639c;
+    }
+    .record-item .record-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .record-item .method {
+      font-size: 10px;
+      font-weight: bold;
+      padding: 3px 8px;
+      border-radius: 3px;
+      margin-right: 10px;
+      text-transform: uppercase;
+    }
+    .record-item .method-GET { background: #1e3a2f; color: #4ec9b0; }
+    .record-item .method-POST { background: #3d3520; color: #dcdcaa; }
+    .record-item .method-PUT { background: #1e2d3d; color: #569cd6; }
+    .record-item .method-DELETE { background: #3d1e1e; color: #f14c4c; }
+    .record-item .method-PATCH { background: #3d2d1e; color: #ce9178; }
+    .record-item .url {
+      font-size: 13px;
+      color: #d4d4d4;
+      word-break: break-all;
+      font-family: 'Consolas', monospace;
+    }
+    .record-item .meta {
+      font-size: 11px;
+      color: #666;
+      display: flex;
+      gap: 15px;
+    }
+    .records-empty {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
+    .records-empty .icon { font-size: 40px; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🚀 API Tester</h1>
+    <div class="actions">
+      <button class="btn btn-primary" id="loadRecordsBtn">📂 Load Records</button>
+      <button class="btn btn-secondary" id="importCurlBtn">📋 Import cURL</button>
+      <button class="btn btn-secondary" id="clearBtn">🗑️ Clear</button>
+      <button class="btn btn-secondary" id="historyBtn">📜 History</button>
+    </div>
+  </div>
+  
+  <div class="request-bar">
+    <select class="method-select" id="methodSelect">
+      <option value="GET" class="method-get">GET</option>
+      <option value="POST" class="method-post">POST</option>
+      <option value="PUT" class="method-put">PUT</option>
+      <option value="DELETE" class="method-delete">DELETE</option>
+      <option value="PATCH" class="method-patch">PATCH</option>
+      <option value="HEAD">HEAD</option>
+      <option value="OPTIONS">OPTIONS</option>
+    </select>
+    <input type="text" class="url-input" id="urlInput" placeholder="Enter request URL (e.g., https://api.example.com/users)">
+    <button class="btn btn-success send-btn" id="sendBtn">▶ Send</button>
+  </div>
+  
+  <div class="main-content">
+    <!-- Request Panel -->
+    <div class="panel" id="requestPanel">
+      <div class="tabs">
+        <div class="tab active" data-tab="params">Params</div>
+        <div class="tab" data-tab="headers">Headers</div>
+        <div class="tab" data-tab="body">Body</div>
+        <div class="tab" data-tab="auth">Auth</div>
+      </div>
+      
+      <div class="tab-content active" id="params-tab">
+        <div class="key-value-editor" id="paramsEditor">
+          <div class="kv-row">
+            <input type="checkbox" class="kv-checkbox" checked>
+            <input type="text" class="kv-key" placeholder="Key">
+            <input type="text" class="kv-value" placeholder="Value">
+            <button class="kv-delete">✕</button>
+          </div>
+        </div>
+        <button class="btn btn-secondary add-row-btn" data-editor="paramsEditor">+ Add Param</button>
+      </div>
+      
+      <div class="tab-content" id="headers-tab">
+        <div class="key-value-editor" id="headersEditor">
+          <div class="kv-row">
+            <input type="checkbox" class="kv-checkbox" checked>
+            <input type="text" class="kv-key" placeholder="Header Name" value="Content-Type">
+            <input type="text" class="kv-value" placeholder="Header Value" value="application/json">
+            <button class="kv-delete">✕</button>
+          </div>
+        </div>
+        <button class="btn btn-secondary add-row-btn" data-editor="headersEditor">+ Add Header</button>
+      </div>
+      
+      <div class="tab-content" id="body-tab">
+        <div class="body-type-select">
+          <label><input type="radio" name="bodyType" value="none" checked> none</label>
+          <label><input type="radio" name="bodyType" value="json"> JSON</label>
+          <label><input type="radio" name="bodyType" value="form"> form-data</label>
+          <label><input type="radio" name="bodyType" value="urlencoded"> x-www-form-urlencoded</label>
+          <label><input type="radio" name="bodyType" value="raw"> raw</label>
+        </div>
+        <textarea class="body-editor" id="bodyEditor" placeholder="Enter request body (JSON, form data, etc.)"></textarea>
+      </div>
+      
+      <div class="tab-content" id="auth-tab">
+        <div style="margin-bottom: 15px;">
+          <label style="font-size: 12px; color: #888; display: block; margin-bottom: 8px;">Auth Type:</label>
+          <select class="method-select" id="authType" style="width: 100%;">
+            <option value="none">No Auth</option>
+            <option value="bearer">Bearer Token</option>
+            <option value="basic">Basic Auth</option>
+            <option value="apikey">API Key</option>
+          </select>
+        </div>
+        <div id="authFields"></div>
+      </div>
+    </div>
+    
+    <!-- Response Panel -->
+    <div class="panel" id="responsePanel">
+      <div class="tabs">
+        <div class="tab active" data-tab="response-body">Body</div>
+        <div class="tab" data-tab="response-headers">Headers</div>
+        <div class="tab" data-tab="response-cookies">Cookies</div>
+      </div>
+      
+      <div class="response-status" id="responseStatus" style="display: none;">
+        <span>Status: <span class="status-code" id="statusCode">200 OK</span></span>
+        <span class="response-time" id="responseTime">Time: 0ms</span>
+        <span class="response-size" id="responseSize">Size: 0 B</span>
+      </div>
+      
+      <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <span>Sending request...</span>
+      </div>
+      
+      <div class="tab-content active" id="response-body-tab">
+        <div class="empty-state" id="emptyState">
+          <div class="icon">📭</div>
+          <div>Enter a URL and click Send to get a response</div>
+        </div>
+        <div id="responseBodyWrapper" style="display: none; flex-direction: column; height: 100%;">
+          <div class="view-mode-toggle">
+            <button class="view-mode-btn active" id="viewPretty">📝 Pretty</button>
+            <button class="view-mode-btn" id="viewRaw">📄 Raw</button>
+            <button class="view-mode-btn" id="viewPreview">👁️ Preview</button>
+          </div>
+          <div class="response-body active" id="responseBody"></div>
+          <div class="response-body" id="responseBodyRaw" style="display: none;"></div>
+          <div class="response-preview" id="responsePreview">
+            <iframe id="previewFrame" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe>
+          </div>
+        </div>
+      </div>
+      
+      <div class="tab-content" id="response-headers-tab">
+        <div class="response-headers-list" id="responseHeaders"></div>
+      </div>
+      
+      <div class="tab-content" id="response-cookies-tab">
+        <div class="response-headers-list" id="responseCookies">
+          <div style="color: #666;">No cookies received</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Import cURL Modal -->
+  <div class="import-modal" id="importModal">
+    <div class="import-modal-content">
+      <h3>📋 Import cURL</h3>
+      <textarea class="import-textarea" id="curlInput" placeholder="Paste your cURL command here...
+
+Example:
+curl 'https://api.example.com/users' \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer token123' \
+  -d '{&quot;name&quot;: &quot;John&quot;}'"></textarea>
+      <div class="import-actions">
+        <button class="btn btn-secondary" id="cancelImport">Cancel</button>
+        <button class="btn btn-primary" id="confirmImport">Import</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- History Modal -->
+  <div class="import-modal" id="historyModal">
+    <div class="import-modal-content" style="max-height: 80vh; overflow: auto;">
+      <h3>📜 Request History</h3>
+      <div id="historyList"></div>
+      <div class="import-actions" style="margin-top: 15px;">
+        <button class="btn btn-danger" id="clearHistory">Clear All</button>
+        <button class="btn btn-secondary" id="closeHistory">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Load Records Modal -->
+  <div class="import-modal" id="recordsModal">
+    <div class="import-modal-content" style="max-height: 80vh; overflow: auto; width: 800px;">
+      <h3>📂 Recorded Requests</h3>
+      <p style="color: #888; font-size: 12px; margin-bottom: 15px;">Chọn một request từ danh sách đã record để load vào API Tester</p>
+      <div style="margin-bottom: 15px;">
+        <input type="text" id="recordsSearchInput" class="url-input" placeholder="🔍 Tìm kiếm theo URL, method..." style="width: 100%;">
+      </div>
+      <div id="recordsList" style="max-height: 350px; overflow-y: auto;"></div>
+      <div class="import-actions" style="margin-top: 15px;">
+        <span id="recordsCount" style="color: #888; font-size: 12px; margin-right: auto;"></span>
+        <button class="btn btn-secondary" id="refreshRecords">🔄 Refresh</button>
+        <button class="btn btn-secondary" id="closeRecords">Close</button>
+      </div>
+    </div>
+  </div>
+  
+  <script src="api-tester.js"></script>
+</body>
+</html>

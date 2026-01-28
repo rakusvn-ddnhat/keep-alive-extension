@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>📊 Zabbix Charts PDF Generator</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: #eee;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+      color: #4fc3f7;
+    }
+    .status {
+      text-align: center;
+      padding: 15px;
+      background: #252547;
+      border-radius: 10px;
+      margin-bottom: 20px;
+    }
+    .status.loading { color: #ffc107; }
+    .status.success { color: #4caf50; }
+    .status.error { color: #f44336; }
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: #333;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #4fc3f7, #4caf50);
+      width: 0%;
+      transition: width 0.3s;
+    }
+    .charts-preview {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 15px;
+      margin-top: 20px;
+    }
+    .chart-item {
+      background: #252547;
+      border-radius: 8px;
+      padding: 10px;
+      text-align: center;
+    }
+    .chart-item img {
+      max-width: 100%;
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+    .chart-item .name {
+      font-size: 12px;
+      color: #888;
+    }
+    .btn {
+      display: inline-block;
+      padding: 12px 30px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: bold;
+      transition: all 0.3s;
+      margin: 5px;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #9c27b0, #7b1fa2);
+      color: white;
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #7b1fa2, #6a1b9a);
+      transform: scale(1.02);
+    }
+    .btn-secondary {
+      background: #444;
+      color: white;
+    }
+    .btn-secondary:hover {
+      background: #555;
+    }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .actions {
+      text-align: center;
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📊 Zabbix Charts PDF Generator</h1>
+    
+    <div class="status loading" id="status">
+      ⏳ Đang tải dữ liệu charts...
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+    </div>
+    
+    <div class="actions">
+      <button class="btn btn-primary" id="downloadPdf" disabled>📄 Tải PDF</button>
+      <button class="btn btn-secondary" id="closeTab">✕ Đóng</button>
+    </div>
+    
+    <div class="charts-preview" id="chartsPreview"></div>
+  </div>
+
+  <script src="jspdf.min.js"></script>
+  <script src="zabbix-pdf.js"></script>
+</body>
+</html>

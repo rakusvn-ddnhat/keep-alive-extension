@@ -21,5 +21,15 @@
   "copyModeOn": "📋 コピーモードをオフ",
   "copyModeOff": "📋 コピーモードをオン",
   "showCopyIndicator": "ページにボタンを表示",
+  "translateMode": "🈯 翻訳モード",
+  "translateModeTitle": "翻訳モード",
+  "translateModeHelp": "💡 翻訳モード有効: 日本語テキストにホバー/クリックして英語/ベトナム語に翻訳",
+  "showTranslateIndicator": "ページにボタンを表示",
+  "translateOnHover": "ホバー時に自動翻訳",
+  "translateTargetLang": "翻訳先",
+  "translating": "翻訳中...",
+  "translateError": "翻訳エラー",
+  "translateModeOn": "🈯 翻訳: オン",
+  "translateModeOff": "🈯 翻訳: オフ",
   "copyright": "© Đoàn Duy Nhất"
 }
