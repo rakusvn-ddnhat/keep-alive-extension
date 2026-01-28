@@ -21,10 +21,10 @@ let bergamotLoaded = false; // Bergamot WASM đã load chưa
 let bergamotWorker = null; // Web Worker cho Bergamot
 let translationCache = {}; // Cache kết quả dịch
 
-// ==================== GOOGLE SHEETS HIGHLIGHTER VARIABLES ====================
+// ==================== WEB CROSSHAIR VARIABLES ====================
 let sheetsHighlightEnabled = false;
-let highlightMode = 'row'; // row, column, both, cross
-let highlightColor = '#fff3cd';
+let highlightMode = 'row'; // row, column, both
+let highlightColor = '#e10e0e';
 let sheetsHighlightActive = false;
 let currentHighlightedCells = [];
 
@@ -169,8 +169,8 @@ safeStorageGet(['language', 'showIndicator', 'copyModeEnabled', 'showCopyIndicat
     }
   }
   
-  // Nếu Sheets Highlight đang bật và đang ở Google Sheets
-  if (sheetsHighlightEnabled && isGoogleSheets()) {
+  // Nếu Web Crosshair đang bật - hoạt động trên mọi trang web
+  if (sheetsHighlightEnabled) {
     enableSheetsHighlight();
   }
   
@@ -249,11 +249,11 @@ try {
         console.log('[Keep Alive] translateTargetLang changed to:', translateTargetLang);
       }
       
-      // ==================== GOOGLE SHEETS HIGHLIGHTER STORAGE CHANGES ====================
+      // ==================== WEB CROSSHAIR STORAGE CHANGES ====================
       if (namespace === 'local' && changes.sheetsHighlightEnabled) {
         sheetsHighlightEnabled = changes.sheetsHighlightEnabled.newValue;
-        console.log('[Keep Alive] sheetsHighlightEnabled changed to:', sheetsHighlightEnabled);
-        if (sheetsHighlightEnabled && isGoogleSheets()) {
+        console.log('[Keep Alive] webCrosshairEnabled changed to:', sheetsHighlightEnabled);
+        if (sheetsHighlightEnabled) {
           enableSheetsHighlight();
         } else {
           disableSheetsHighlight();
@@ -2135,27 +2135,10 @@ function getRowPosition(rowNum, gridRect) {
 }
 
 function updateSheetsHighlight(clickEvent) {
-  if (!sheetsHighlightEnabled || !isGoogleSheets()) {
+  if (!sheetsHighlightEnabled) {
     removeSheetsOverlay();
     return;
   }
-  
-  // Tìm grid area
-  const gridArea = document.querySelector('.grid-container') || 
-                  document.querySelector('[role="grid"]') ||
-                  document.querySelector('.waffle');
-  
-  if (!gridArea) {
-    return;
-  }
-  
-  const gridRect = gridArea.getBoundingClientRect();
-  
-  // Hardcode kích thước - đơn giản nhất
-  const rowHeaderWidth = 46;
-  const colHeaderHeight = 37;
-  const contentLeft = gridRect.left + rowHeaderWidth;
-  const contentTop = gridRect.top + colHeaderHeight;
   
   let clickX, clickY;
   
@@ -2170,58 +2153,69 @@ function updateSheetsHighlight(clickEvent) {
     return;
   }
 
-  // ===== CÁCH ĐƠN GIẢN NHẤT =====
-  // Chỉ cần vẽ highlight TẠI VỊ TRÍ CLICK
-  // Không cần tính toán cell, scroll gì cả!
-  
-  // Tạo overlay
+  // Tạo overlay full screen cho crosshair
   const overlay = createSheetsOverlay();
   overlay.innerHTML = '';
-  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:9999;';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:999999;';
   
-  // Vẽ ROW - đường ngang đi qua điểm click
-  if (highlightMode === 'row' || highlightMode === 'both' || highlightMode === 'cross') {
+  // Lấy màu từ setting (dạng hex) và chuyển sang rgba
+  const hexToRgba = (hex, alpha) => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
+  const lineColor = hexToRgba(highlightColor, 0.8);
+  const dotColor = hexToRgba(highlightColor, 0.9);
+  
+  // Vẽ ĐƯỜNG NGANG - đi qua điểm click, full width màn hình
+  if (highlightMode === 'row' || highlightMode === 'both') {
     const rowBar = document.createElement('div');
     rowBar.className = 'nhat-sheets-row-bar';
     rowBar.style.cssText = `
       position: fixed;
-      left: ${contentLeft}px;
+      left: 0;
       top: ${clickY}px;
-      width: ${gridRect.right - contentLeft}px;
+      width: 100vw;
       height: 2px;
-      background: rgba(255, 200, 0, 0.8);
+      background: ${lineColor};
       transform: translateY(-1px);
+      box-shadow: 0 0 4px ${highlightColor};
     `;
     overlay.appendChild(rowBar);
   }
   
-  // Vẽ COLUMN - đường dọc đi qua điểm click  
-  if (highlightMode === 'column' || highlightMode === 'both' || highlightMode === 'cross') {
+  // Vẽ ĐƯỜNG DỌC - đi qua điểm click, full height màn hình
+  if (highlightMode === 'column' || highlightMode === 'both') {
     const colBar = document.createElement('div');
     colBar.className = 'nhat-sheets-col-bar';
     colBar.style.cssText = `
       position: fixed;
       left: ${clickX}px;
-      top: ${contentTop}px;
+      top: 0;
       width: 2px;
-      height: ${gridRect.bottom - contentTop}px;
-      background: rgba(255, 200, 0, 0.8);
+      height: 100vh;
+      background: ${lineColor};
       transform: translateX(-1px);
+      box-shadow: 0 0 4px ${highlightColor};
     `;
     overlay.appendChild(colBar);
   }
   
-  // Vẽ CROSSHAIR tại điểm click
+  // Vẽ ĐIỂM CROSSHAIR tại vị trí click - nhỏ hơn và căn giữa chính xác
   const dot = document.createElement('div');
+  const dotSize = 8;
   dot.style.cssText = `
     position: fixed;
-    left: ${clickX - 5}px;
-    top: ${clickY - 5}px;
-    width: 10px;
-    height: 10px;
-    background: rgba(255, 150, 0, 0.9);
+    left: ${clickX}px;
+    top: ${clickY}px;
+    width: ${dotSize}px;
+    height: ${dotSize}px;
+    background: ${dotColor};
     border-radius: 50%;
-    border: 2px solid #ff6600;
+    border: 1px solid ${highlightColor};
+    box-shadow: 0 0 6px ${highlightColor};
+    transform: translate(-50%, -50%);
   `;
   overlay.appendChild(dot);
 }
@@ -2234,17 +2228,13 @@ let sheetsScrollHandler = null;
 
 function enableSheetsHighlight() {
   if (sheetsHighlightActive) return;
-  if (!isGoogleSheets()) {
-    console.log('[Keep Alive] Not Google Sheets, skipping highlight');
-    return;
-  }
   
   sheetsHighlightActive = true;
-  console.log('[Keep Alive] Sheets Highlight enabled (click mode)');
+  console.log('[Keep Alive] Web Crosshair enabled');
   
   updateSheetsHighlightColor();
   
-  // Chỉ cập nhật khi click vào cell
+  // Cập nhật khi click vào bất kỳ đâu
   sheetsClickHandler = (e) => {
     // Truyền click event để biết vị trí click
     setTimeout(() => updateSheetsHighlight(e), 50);
@@ -2256,12 +2246,17 @@ function enableSheetsHighlight() {
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Tab'].includes(e.key)) {
       setTimeout(() => updateSheetsHighlight(null), 50);
     }
+    // ESC để tắt crosshair
+    if (e.key === 'Escape') {
+      removeSheetsOverlay();
+      lastClickedCell = null;
+    }
   };
   
-  // Ẩn highlight khi scroll
+  // Ẩn crosshair khi scroll
   sheetsScrollHandler = () => {
     removeSheetsOverlay();
-    lastClickedCell = null; // Reset để phải click lại
+    lastClickedCell = null;
   };
   
   document.addEventListener('click', sheetsClickHandler, true);
@@ -2277,7 +2272,7 @@ function disableSheetsHighlight() {
   if (!sheetsHighlightActive) return;
   
   sheetsHighlightActive = false;
-  console.log('[Keep Alive] Sheets Highlight disabled');
+  console.log('[Keep Alive] Web Crosshair disabled');
   
   if (sheetsHighlightInterval) {
     clearInterval(sheetsHighlightInterval);

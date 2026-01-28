@@ -466,6 +466,248 @@ function escapeXml(unsafe) {
   });
 }
 
+// ==================== ZABBIX CHARTS BACKGROUND PROCESSING ====================
+// Xử lý download/PDF trong background để không bị mất khi popup đóng
+
+// Lưu trạng thái nhiều tiến trình download
+let zabbixDownloadTasks = {}; // { taskId: { active, current, total, percent, type, tabId, completed, success, error } }
+let taskIdCounter = 0;
+
+// Lắng nghe yêu cầu từ popup
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'zabbixDownloadImages') {
+    // Bắt đầu download images trong background
+    const taskId = ++taskIdCounter;
+    zabbixDownloadTasks[taskId] = { 
+      active: true, current: 0, total: 0, percent: 0, 
+      type: 'images', tabId: message.tabId, startTime: Date.now() 
+    };
+    downloadZabbixImages(message.tabId, taskId);
+    sendResponse({ success: true, taskId: taskId, message: 'Started in background' });
+    return true;
+  }
+  
+  if (message.action === 'zabbixExportPdf') {
+    // Bắt đầu thu thập ảnh cho PDF trong background
+    const taskId = ++taskIdCounter;
+    zabbixDownloadTasks[taskId] = { 
+      active: true, current: 0, total: 0, percent: 0, 
+      type: 'pdf', tabId: message.tabId, startTime: Date.now() 
+    };
+    collectZabbixChartsForPdf(message.tabId, taskId);
+    sendResponse({ success: true, taskId: taskId, message: 'Started in background' });
+    return true;
+  }
+  
+  if (message.action === 'getZabbixDownloadStatus') {
+    // Trả về tất cả tasks đang chạy hoặc vừa hoàn thành (trong 10 giây)
+    const now = Date.now();
+    const activeTasks = {};
+    for (const [id, task] of Object.entries(zabbixDownloadTasks)) {
+      // Giữ lại task đang active hoặc completed trong 10 giây gần đây
+      if (task.active || (task.completedTime && (now - task.completedTime) < 10000)) {
+        activeTasks[id] = task;
+      }
+    }
+    sendResponse({ tasks: activeTasks });
+    return true;
+  }
+  
+  // Forward progress từ content script
+  if (message.action === 'zabbixDownloadProgress' || message.action === 'zabbixPdfProgress') {
+    // Cập nhật task tương ứng
+    if (message.taskId && zabbixDownloadTasks[message.taskId]) {
+      zabbixDownloadTasks[message.taskId].current = message.current;
+      zabbixDownloadTasks[message.taskId].total = message.total;
+      zabbixDownloadTasks[message.taskId].percent = message.percent;
+    }
+  }
+});
+
+// Download tất cả ảnh Zabbix
+async function downloadZabbixImages(tabId, taskId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      args: [taskId],
+      func: async (taskId) => {
+        const images = document.querySelectorAll('#charts img, .flickerfreescreen img');
+        if (images.length === 0) {
+          return { success: false, error: 'noCharts' };
+        }
+        
+        const total = images.length;
+        let downloaded = 0;
+        
+        for (let i = 0; i < images.length; i++) {
+          const img = images[i];
+          const src = img.src;
+          
+          let name = 'chart_' + (i + 1);
+          const graphMatch = src.match(/graphid=(\d+)/);
+          const itemMatch = src.match(/itemids%5B%5D=(\d+)/);
+          
+          if (graphMatch) name = 'graph_' + graphMatch[1];
+          else if (itemMatch) name = 'item_' + itemMatch[1];
+          
+          try {
+            const response = await fetch(src);
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = name + '.png';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            downloaded++;
+            
+            // Gửi progress update với taskId
+            const percent = Math.round((downloaded / total) * 100);
+            chrome.runtime.sendMessage({ 
+              action: 'zabbixDownloadProgress', 
+              taskId: taskId,
+              current: downloaded, 
+              total: total,
+              percent: percent 
+            });
+            
+            await new Promise(r => setTimeout(r, 300));
+          } catch (e) {
+            console.error('Error downloading:', name, e);
+          }
+        }
+        
+        return { success: true, count: downloaded, total: total };
+      }
+    });
+    
+    const result = results[0]?.result;
+    if (zabbixDownloadTasks[taskId]) {
+      zabbixDownloadTasks[taskId] = { 
+        ...zabbixDownloadTasks[taskId],
+        active: false, 
+        current: result?.count || 0, 
+        total: result?.total || result?.count || 0, 
+        percent: 100, 
+        completed: true,
+        completedTime: Date.now(),
+        success: result?.success,
+        error: result?.error
+      };
+    }
+  } catch (err) {
+    console.error('[Zabbix] Download error:', err);
+    if (zabbixDownloadTasks[taskId]) {
+      zabbixDownloadTasks[taskId] = { 
+        ...zabbixDownloadTasks[taskId],
+        active: false, 
+        error: err.message,
+        completedTime: Date.now()
+      };
+    }
+  }
+}
+
+// Thu thập ảnh cho PDF
+async function collectZabbixChartsForPdf(tabId, taskId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      args: [taskId],
+      func: async (taskId) => {
+        const images = document.querySelectorAll('#charts img, .flickerfreescreen img');
+        if (images.length === 0) {
+          return { success: false, error: 'Không tìm thấy charts' };
+        }
+        
+        const total = images.length;
+        const chartData = [];
+        
+        for (let i = 0; i < images.length; i++) {
+          const img = images[i];
+          const src = img.src;
+          
+          let name = 'Chart ' + (i + 1);
+          const graphMatch = src.match(/graphid=(\d+)/);
+          const itemMatch = src.match(/itemids%5B%5D=(\d+)/);
+          if (graphMatch) name = 'Graph ID: ' + graphMatch[1];
+          else if (itemMatch) name = 'Item ID: ' + itemMatch[1];
+          
+          try {
+            const response = await fetch(src);
+            const blob = await response.blob();
+            const base64 = await new Promise(resolve => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result);
+              reader.readAsDataURL(blob);
+            });
+            
+            chartData.push({ name, base64 });
+            
+            // Gửi progress update với taskId
+            const current = chartData.length;
+            const percent = Math.round((current / total) * 100);
+            chrome.runtime.sendMessage({ 
+              action: 'zabbixPdfProgress', 
+              taskId: taskId,
+              current: current, 
+              total: total,
+              percent: percent 
+            });
+          } catch (e) {
+            console.error('Error fetching:', name, e);
+          }
+        }
+        
+        return { success: true, charts: chartData, total: total };
+      }
+    });
+    
+    const result = results[0]?.result;
+    if (result?.success && result.charts?.length > 0) {
+      // Save to storage and open PDF generator
+      await chrome.storage.local.set({ zabbixCharts: result.charts });
+      chrome.tabs.create({ url: chrome.runtime.getURL('zabbix-pdf.html') });
+      
+      if (zabbixDownloadTasks[taskId]) {
+        zabbixDownloadTasks[taskId] = { 
+          ...zabbixDownloadTasks[taskId],
+          active: false, 
+          current: result.charts.length, 
+          total: result.total, 
+          percent: 100, 
+          completed: true,
+          completedTime: Date.now(),
+          success: true
+        };
+      }
+    } else {
+      if (zabbixDownloadTasks[taskId]) {
+        zabbixDownloadTasks[taskId] = { 
+          ...zabbixDownloadTasks[taskId],
+          active: false, 
+          error: result?.error || 'Không có charts',
+          completedTime: Date.now()
+        };
+      }
+    }
+  } catch (err) {
+    console.error('[Zabbix] PDF collect error:', err);
+    if (zabbixDownloadTasks[taskId]) {
+      zabbixDownloadTasks[taskId] = { 
+        ...zabbixDownloadTasks[taskId],
+        active: false, 
+        error: err.message,
+        completedTime: Date.now()
+      };
+    }
+  }
+}
+
 function downloadFile(filename, content) {
   // Dùng MIME type chung application/octet-stream để Chrome không tự động đổi đuôi file
   const mimeType = 'application/octet-stream';
