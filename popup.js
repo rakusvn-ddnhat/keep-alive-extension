@@ -709,4 +709,339 @@ document.addEventListener('DOMContentLoaded', () => {
   // Check for charts when popup opens + check download status
   checkZabbixCharts();
   checkZabbixDownloadStatus();
+
+  // ==================== SCRIPT LOADER FUNCTIONS ====================
+  let currentScripts = [];
+  
+  // Default script URL
+  const DEFAULT_SCRIPT_URL = 'https://github.com/rakusvn-dhan/tests/blob/master/scripts/absence_calculator.js';
+
+  // Load scripts from storage, add default if empty
+  async function loadScripts() {
+    chrome.runtime.sendMessage({ action: 'getScripts' }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('Error loading scripts:', chrome.runtime.lastError);
+        return;
+      }
+      currentScripts = response || [];
+      
+      // If no scripts, auto-add default script
+      if (currentScripts.length === 0) {
+        addDefaultScript();
+        return;
+      }
+      
+      renderScriptList();
+      updateScriptCount();
+      checkForScriptUpdates();
+    });
+  }
+  
+  // Add default script automatically
+  function addDefaultScript() {
+    chrome.runtime.sendMessage({ action: 'addScript', data: { url: DEFAULT_SCRIPT_URL } }, (response) => {
+      if (response?.success) {
+        console.log('[ScriptLoader] Default script added:', response.script.name);
+        // Reload scripts
+        chrome.runtime.sendMessage({ action: 'getScripts' }, (resp) => {
+          currentScripts = resp || [];
+          renderScriptList();
+          updateScriptCount();
+          checkForScriptUpdates();
+        });
+      } else {
+        console.error('[ScriptLoader] Failed to add default script:', response?.error);
+        renderScriptList();
+        updateScriptCount();
+      }
+    });
+  }
+
+  // Render script list
+  function renderScriptList() {
+    const scriptList = document.getElementById('scriptList');
+    if (!scriptList) return;
+
+    if (currentScripts.length === 0) {
+      scriptList.innerHTML = '<div style="padding: 15px; text-align: center; color: #888; font-size: 11px;">Chưa có script nào</div>';
+      return;
+    }
+
+    scriptList.innerHTML = currentScripts.map(script => {
+      const matchDisplay = (script.matches && script.matches.length > 0) 
+        ? script.matches[0] 
+        : script.domain || 'All sites';
+      const updateBadge = script.hasUpdate ? '<span class="script-update-badge">NEW</span>' : '';
+      const hasVars = script.variables && script.variables.length > 0;
+      const editIcon = hasVars ? '⚙️' : '✏️';
+      const editTitle = hasVars ? 'Cấu hình biến' : 'Sửa';
+      
+      return `
+        <div class="script-item">
+          <div class="script-info">
+            <div class="script-name" title="${script.name}">${script.name}</div>
+            <div class="script-match" title="${matchDisplay}">🌐 ${matchDisplay}</div>
+            <div class="script-meta">
+              <span class="script-version">v${script.version || '1.0'}</span>
+              ${hasVars ? '<span style="background:#e8f5e9;color:#388e3c;padding:1px 4px;border-radius:3px;font-size:9px;">⚙️ ' + script.variables.length + ' vars</span>' : ''}
+              ${updateBadge}
+            </div>
+          </div>
+          <div class="script-toggle ${script.enabled ? 'active' : ''}" data-id="${script.id}" title="${script.enabled ? 'Tắt' : 'Bật'}"></div>
+          <div class="script-actions">
+            ${script.hasUpdate ? `<button class="btn-update" data-id="${script.id}" data-action="update" title="Cập nhật">⬆️</button>` : ''}
+            <button class="btn-edit" data-id="${script.id}" data-action="edit" title="${editTitle}">${editIcon}</button>
+            <button class="btn-remove" data-id="${script.id}" data-action="remove" title="Xóa">🗑️</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Add event listeners
+    scriptList.querySelectorAll('.script-toggle').forEach(toggle => {
+      toggle.addEventListener('click', () => {
+        const scriptId = toggle.dataset.id;
+        const script = currentScripts.find(s => s.id === scriptId);
+        if (script) {
+          const newState = !script.enabled;
+          chrome.runtime.sendMessage({ 
+            action: 'toggleScript', 
+            scriptId: scriptId, 
+            enabled: newState 
+          }, () => {
+            loadScripts();
+          });
+        }
+      });
+    });
+
+    scriptList.querySelectorAll('[data-action]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const scriptId = btn.dataset.id;
+        const action = btn.dataset.action;
+
+        if (action === 'update') {
+          updateScript(scriptId);
+        } else if (action === 'edit') {
+          editScript(scriptId);
+        } else if (action === 'remove') {
+          if (confirm(messages['confirmRemoveScript'] || 'Xóa script này?')) {
+            chrome.runtime.sendMessage({ action: 'removeScript', scriptId: scriptId }, () => {
+              loadScripts();
+            });
+          }
+        }
+      });
+    });
+  }
+
+  // Update script count
+  function updateScriptCount() {
+    const countEl = document.getElementById('scriptCount');
+    if (countEl) {
+      const count = currentScripts.length;
+      const label = messages['scriptsInstalled'] || 'script(s) đã cài';
+      countEl.innerHTML = `${count} <span data-i18n="scriptsInstalled">${label}</span>`;
+    }
+  }
+
+  // Check for updates
+  function checkForScriptUpdates() {
+    const updatesAvailable = currentScripts.filter(s => s.hasUpdate).length;
+    const notifEl = document.getElementById('scriptUpdateNotif');
+    const countEl = document.getElementById('scriptUpdateCount');
+    
+    if (updatesAvailable > 0) {
+      notifEl.style.display = 'block';
+      countEl.textContent = updatesAvailable;
+    } else {
+      notifEl.style.display = 'none';
+    }
+  }
+
+  // Update single script
+  function updateScript(scriptId) {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '⏳';
+    
+    chrome.runtime.sendMessage({ action: 'updateScript', scriptId: scriptId }, (response) => {
+      if (response?.success) {
+        loadScripts();
+      } else {
+        alert(response?.error || 'Update failed');
+        btn.disabled = false;
+        btn.textContent = '⬆️';
+      }
+    });
+  }
+
+  // Edit script - show configurable variables modal
+  function editScript(scriptId) {
+    chrome.runtime.sendMessage({ action: 'getScriptById', scriptId: scriptId }, (script) => {
+      if (!script) return;
+      
+      // Check if script has configurable variables
+      if (script.variables && script.variables.length > 0) {
+        showVariablesModal(script);
+      } else {
+        // Fallback to simple URL edit
+        const newUrl = prompt('Script URL:', script.url || script.sourceUrl || '');
+        if (newUrl && newUrl !== script.url) {
+          chrome.runtime.sendMessage({ action: 'removeScript', scriptId: scriptId }, () => {
+            chrome.runtime.sendMessage({ action: 'addScript', data: { url: newUrl } }, () => {
+              loadScripts();
+            });
+          });
+        }
+      }
+    });
+  }
+
+  // Show variables modal for editing script config
+  function showVariablesModal(script) {
+    // Remove existing modal
+    const existingModal = document.getElementById('scriptVarsModal');
+    if (existingModal) existingModal.remove();
+    
+    const modalHtml = `
+      <div id="scriptVarsModal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 10000; display: flex; align-items: center; justify-content: center;">
+        <div style="background: white; border-radius: 8px; padding: 15px; width: 90%; max-width: 350px; max-height: 80%; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 8px;">
+            <h3 style="margin: 0; font-size: 14px;">⚙️ ${script.name}</h3>
+            <button id="closeVarsModal" style="border: none; background: none; font-size: 18px; cursor: pointer;">✕</button>
+          </div>
+          <div style="font-size: 10px; color: #666; margin-bottom: 10px;">
+            v${script.version} | ${script.matches[0] || 'All sites'}
+          </div>
+          <div id="varsContainer">
+            ${script.variables.map((v, i) => `
+              <div style="margin-bottom: 10px;">
+                <label style="display: block; font-size: 11px; color: #333; font-weight: bold; margin-bottom: 3px;">
+                  ${v.name}
+                </label>
+                <input type="text" 
+                       data-var-index="${i}" 
+                       data-var-name="${v.name}"
+                       value="${v.value}" 
+                       style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 11px; box-sizing: border-box;">
+                <div style="font-size: 9px; color: #888; margin-top: 2px;">${v.description}</div>
+              </div>
+            `).join('')}
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: 15px;">
+            <button id="saveVarsBtn" style="flex: 1; padding: 8px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">
+              💾 Lưu
+            </button>
+            <button id="cancelVarsBtn" style="flex: 1; padding: 8px; background: #f5f5f5; color: #333; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 12px;">
+              Hủy
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    
+    // Close modal handlers
+    document.getElementById('closeVarsModal').onclick = () => document.getElementById('scriptVarsModal').remove();
+    document.getElementById('cancelVarsBtn').onclick = () => document.getElementById('scriptVarsModal').remove();
+    document.getElementById('scriptVarsModal').onclick = (e) => {
+      if (e.target.id === 'scriptVarsModal') document.getElementById('scriptVarsModal').remove();
+    };
+    
+    // Save handler
+    document.getElementById('saveVarsBtn').onclick = () => {
+      const inputs = document.querySelectorAll('#varsContainer input');
+      const newVariables = Array.from(inputs).map(input => ({
+        name: input.dataset.varName,
+        value: input.value,
+        description: script.variables[parseInt(input.dataset.varIndex)].description
+      }));
+      
+      chrome.runtime.sendMessage({ 
+        action: 'updateScriptVariables', 
+        scriptId: script.id, 
+        variables: newVariables 
+      }, (response) => {
+        if (response?.success) {
+          document.getElementById('scriptVarsModal').remove();
+          loadScripts();
+          alert('✅ Đã lưu! Reload trang để áp dụng thay đổi.');
+        } else {
+          alert(response?.error || 'Lỗi khi lưu');
+        }
+      });
+    };
+  }
+
+  // Add script button
+  document.getElementById('addScript')?.addEventListener('click', () => {
+    const urlInput = document.getElementById('scriptUrl');
+    const url = urlInput.value.trim();
+    
+    if (!url) {
+      alert(messages['enterScriptUrl'] || 'Vui lòng nhập URL script');
+      return;
+    }
+
+    const btn = document.getElementById('addScript');
+    btn.disabled = true;
+    btn.textContent = '⏳';
+    
+    chrome.runtime.sendMessage({ action: 'addScript', data: { url: url } }, (response) => {
+      if (response?.success) {
+        urlInput.value = '';
+        loadScripts();
+      } else {
+        alert(response?.error || 'Failed to add script');
+      }
+      btn.disabled = false;
+      btn.textContent = messages['add'] || 'Thêm';
+    });
+  });
+
+  // Check updates button
+  document.getElementById('checkScriptUpdates')?.addEventListener('click', () => {
+    const btn = document.getElementById('checkScriptUpdates');
+    btn.textContent = '⏳';
+    btn.disabled = true;
+    
+    chrome.runtime.sendMessage({ action: 'checkForUpdates' }, (response) => {
+      loadScripts();
+      btn.textContent = '🔄';
+      btn.disabled = false;
+      
+      if (response?.updatesFound > 0) {
+        alert(`${response.updatesFound} bản cập nhật có sẵn!`);
+      }
+    });
+  });
+
+  // Update all scripts button
+  document.getElementById('updateAllScripts')?.addEventListener('click', () => {
+    const scriptsToUpdate = currentScripts.filter(s => s.hasUpdate);
+    
+    scriptsToUpdate.forEach(script => {
+      chrome.runtime.sendMessage({ action: 'updateScript', scriptId: script.id });
+    });
+    
+    setTimeout(() => {
+      loadScripts();
+    }, 1000);
+  });
+
+  // Toggle script list visibility
+  document.getElementById('toggleScriptList')?.addEventListener('click', () => {
+    const scriptList = document.getElementById('scriptList');
+    if (scriptList.style.display === 'none') {
+      scriptList.style.display = 'block';
+    } else {
+      scriptList.style.display = 'none';
+    }
+  });
+
+  // Load scripts on popup open
+  loadScripts();
 });

@@ -54,6 +54,29 @@
     .download-status.show { display: block; }
     .download-status.success { color: #4CAF50; }
     .download-status.error { color: #f44336; }
+    /* Script Loader Styles */
+    .script-item { display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #f0f0f0; font-size: 11px; gap: 8px; }
+    .script-item:last-child { border-bottom: none; }
+    .script-item:hover { background: #f5f5f5; }
+    .script-info { flex: 1; min-width: 0; }
+    .script-name { font-weight: bold; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .script-match { font-size: 9px; color: #666; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .script-meta { display: flex; align-items: center; gap: 4px; font-size: 9px; color: #999; margin-top: 2px; }
+    .script-version { background: #e3f2fd; color: #1976d2; padding: 1px 4px; border-radius: 3px; }
+    .script-update-badge { background: #ffc107; color: #000; padding: 1px 4px; border-radius: 3px; font-weight: bold; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+    .script-toggle { width: 32px; height: 18px; background: #ccc; border-radius: 18px; position: relative; cursor: pointer; transition: 0.3s; }
+    .script-toggle.active { background: #4CAF50; }
+    .script-toggle::after { content: ''; position: absolute; width: 14px; height: 14px; border-radius: 50%; background: white; top: 2px; left: 2px; transition: 0.3s; }
+    .script-toggle.active::after { left: 16px; }
+    .script-actions { display: flex; gap: 4px; }
+    .script-actions button { padding: 3px 6px; font-size: 10px; border: none; border-radius: 3px; cursor: pointer; }
+    .btn-update { background: #fff3cd; color: #856404; }
+    .btn-update:hover { background: #ffc107; }
+    .btn-edit { background: #e3f2fd; color: #1976d2; }
+    .btn-edit:hover { background: #bbdefb; }
+    .btn-remove { background: #ffebee; color: #d32f2f; }
+    .btn-remove:hover { background: #ffcdd2; }
   </style>
 </head>
 <body>
@@ -185,6 +208,30 @@
       <button id="downloadZabbixPdf" class="btn btn-pdf" data-i18n="exportPdf">📄 Xuất PDF</button>
     </div>
     <div id="zabbixDownloadStatusContainer" style="max-height: 80px; overflow-y: auto;"></div>
+  </div>
+
+  <!-- Script Loader Section -->
+  <div class="section">
+    <div class="container">
+      <span data-i18n="scriptLoader">📜 Script Loader</span>
+      <button id="checkScriptUpdates" class="toggle-list-btn" style="margin: 0; padding: 4px 8px; font-size: 11px;" title="Check for updates">🔄</button>
+    </div>
+    <p style="font-size: 10px; color: #888; margin: 8px 0; line-height: 1.4;" data-i18n="scriptLoaderHelp">
+      💡 Tự động nhúng script JS vào các trang web theo domain
+    </p>
+    <div id="scriptUpdateNotif" style="display: none; background: #fff3cd; border-left: 3px solid #ffc107; padding: 6px 8px; margin: 8px 0; border-radius: 4px; font-size: 10px;">
+      ⚠️ <span id="scriptUpdateCount">0</span> <span data-i18n="scriptsHaveUpdates">script(s) có bản cập nhật!</span>
+      <button id="updateAllScripts" style="margin-left: 8px; padding: 2px 6px; font-size: 10px; background: #ffc107; border: none; border-radius: 3px; cursor: pointer;">Update All</button>
+    </div>
+    <div style="display: flex; gap: 5px; margin: 8px 0;">
+      <input type="text" id="scriptUrl" data-i18n-placeholder="scriptUrlPlaceholder" placeholder="Nhập URL script (GitHub/Raw JS)" style="flex: 1; padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 11px;">
+      <button id="addScript" class="btn btn-secondary" style="width: auto; padding: 6px 12px; margin: 0; font-size: 11px;" data-i18n="add">Thêm</button>
+    </div>
+    <div class="status" style="display: flex; align-items: center; justify-content: center; gap: 8px; margin: 5px 0;">
+      <button class="toggle-list-btn" id="toggleScriptList">📋 Xem</button>
+      <span id="scriptCount">0 <span data-i18n="scriptsInstalled">script(s) đã cài</span></span>
+    </div>
+    <div class="request-list" id="scriptList" style="display: none; max-height: 150px;"></div>
   </div>
 
   <div class="section">

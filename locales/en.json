@@ -57,5 +57,13 @@
   "notifySound": "Sound:",
   "chatNotifierHelp": "💡 Show notification when new messages arrive (requires notification permission)",
   "testNotify": "🔔 Test Notification",
+  "scriptLoader": "📜 Script Loader",
+  "scriptLoaderHelp": "💡 Auto-inject JS scripts into websites by domain",
+  "scriptUrlPlaceholder": "Enter script URL (GitHub/Raw JS)",
+  "add": "Add",
+  "scriptsInstalled": "script(s) installed",
+  "scriptsHaveUpdates": "script(s) have updates!",
+  "enterScriptUrl": "Please enter script URL",
+  "confirmRemoveScript": "Remove this script?",
   "copyright": "© Doan Duy Nhat"
 }

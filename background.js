@@ -242,6 +242,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       console.log('[Background] Updated requests, now have:', recordedRequests.length);
       sendResponse({ success: true });
     }
+    // Script Loader handlers
+    else if (message.action === 'getScripts') {
+      getScripts().then(scripts => sendResponse(scripts));
+      return true;
+    } else if (message.action === 'addScript') {
+      addScript(message.data).then(result => sendResponse(result));
+      return true;
+    } else if (message.action === 'removeScript') {
+      removeScript(message.scriptId).then(result => sendResponse(result));
+      return true;
+    } else if (message.action === 'toggleScript') {
+      toggleScript(message.scriptId, message.enabled).then(result => sendResponse(result));
+      return true;
+    } else if (message.action === 'updateScript') {
+      updateScript(message.scriptId).then(result => sendResponse(result));
+      return true;
+    } else if (message.action === 'checkForUpdates') {
+      checkForUpdates().then(result => sendResponse(result));
+      return true;
+    } else if (message.action === 'getScriptsForUrl') {
+      getScriptsForUrl(message.url).then(scripts => sendResponse(scripts));
+      return true;
+    } else if (message.action === 'getScriptById') {
+      getScriptById(message.scriptId).then(script => sendResponse(script));
+      return true;
+    } else if (message.action === 'updateScriptVariables') {
+      updateScriptVariables(message.scriptId, message.variables).then(result => sendResponse(result));
+      return true;
+    }
   } catch (error) {
     console.error('[Background] Error handling message:', error);
     sendResponse({ error: error.message });
@@ -729,3 +758,365 @@ function downloadFile(filename, content) {
     }
   });
 }
+
+// ==================== SCRIPT LOADER SYSTEM ====================
+const GITHUB_API_BASE = 'https://api.github.com';
+const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com';
+
+// Parse GitHub URL (support blob or raw)
+function parseGitHubUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    
+    // Support raw.githubusercontent.com
+    if (urlObj.hostname === 'raw.githubusercontent.com') {
+      const parts = urlObj.pathname.split('/').filter(p => p);
+      if (parts.length >= 4) {
+        return {
+          owner: parts[0],
+          repo: parts[1],
+          branch: parts[2],
+          path: parts.slice(3).join('/')
+        };
+      }
+    }
+    
+    // Support github.com/owner/repo/blob/branch/path
+    if (urlObj.hostname === 'github.com' && urlObj.pathname.includes('/blob/')) {
+      const parts = urlObj.pathname.split('/').filter(p => p);
+      if (parts.length >= 5 && parts[2] === 'blob') {
+        return {
+          owner: parts[0],
+          repo: parts[1],
+          branch: parts[3],
+          path: parts.slice(4).join('/')
+        };
+      }
+    }
+    
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// Fetch script content from GitHub
+async function fetchScriptContent(repoInfo) {
+  const rawUrl = `${GITHUB_RAW_BASE}/${repoInfo.owner}/${repoInfo.repo}/${repoInfo.branch}/${repoInfo.path}`;
+  
+  try {
+    const response = await fetch(rawUrl);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    
+    const content = await response.text();
+    return { success: true, content };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Parse UserScript metadata from content
+function parseScriptMetadata(content) {
+  const metadata = {
+    name: 'Unnamed Script',
+    version: '1.0',
+    description: '',
+    author: '',
+    matches: [],
+    includes: [],
+    excludes: [],
+    variables: [] // Configurable variables
+  };
+  
+  const metaBlock = content.match(/\/\/ ==UserScript==[\s\S]*?\/\/ ==\/UserScript==/);
+  if (metaBlock) {
+    const lines = metaBlock[0].split('\n');
+    lines.forEach(line => {
+      const match = line.match(/\/\/ @(\w+)\s+(.+)/);
+      if (match) {
+        const key = match[1];
+        const value = match[2].trim();
+        
+        if (key === 'name') metadata.name = value;
+        else if (key === 'version') metadata.version = value;
+        else if (key === 'description') metadata.description = value;
+        else if (key === 'author') metadata.author = value;
+        else if (key === 'match') metadata.matches.push(value);
+        else if (key === 'include') metadata.includes.push(value);
+        else if (key === 'exclude') metadata.excludes.push(value);
+      }
+    });
+  }
+  
+  // Parse configurable variables (const varName = 'value'; // comment)
+  const varRegex = /const\s+(\w+)\s*=\s*['"]([^'"]*)['"]\s*;\s*\/\/\s*(.+)/g;
+  let varMatch;
+  while ((varMatch = varRegex.exec(content)) !== null) {
+    metadata.variables.push({
+      name: varMatch[1],
+      value: varMatch[2],
+      description: varMatch[3].trim()
+    });
+  }
+  
+  return metadata;
+}
+
+// Get all scripts from storage
+async function getScripts() {
+  const result = await chrome.storage.local.get(['userScripts']);
+  return result.userScripts || [];
+}
+
+// Add new script
+async function addScript(data) {
+  const { url } = data;
+  
+  // Parse GitHub URL
+  const repoInfo = parseGitHubUrl(url);
+  if (!repoInfo) {
+    return { success: false, error: 'Invalid GitHub URL' };
+  }
+  
+  // Fetch script content
+  const fetchResult = await fetchScriptContent(repoInfo);
+  if (!fetchResult.success) {
+    return { success: false, error: fetchResult.error };
+  }
+  
+  // Parse metadata and variables
+  const metadata = parseScriptMetadata(fetchResult.content);
+  
+  // Create script object
+  const script = {
+    id: Date.now().toString(),
+    name: metadata.name,
+    version: metadata.version,
+    description: metadata.description,
+    author: metadata.author,
+    matches: metadata.matches.length > 0 ? metadata.matches : ['*://*/*'],
+    includes: metadata.includes,
+    excludes: metadata.excludes,
+    variables: metadata.variables, // Configurable variables
+    content: fetchResult.content,
+    url: url,
+    sourceUrl: `${GITHUB_RAW_BASE}/${repoInfo.owner}/${repoInfo.repo}/${repoInfo.branch}/${repoInfo.path}`,
+    repoInfo: repoInfo,
+    enabled: true,
+    lastUpdated: Date.now(),
+    hasUpdate: false
+  };
+  
+  // Save to storage
+  const scripts = await getScripts();
+  scripts.push(script);
+  await chrome.storage.local.set({ userScripts: scripts });
+  
+  return { success: true, script };
+}
+
+// Remove script
+async function removeScript(scriptId) {
+  const scripts = await getScripts();
+  const filtered = scripts.filter(s => s.id !== scriptId);
+  await chrome.storage.local.set({ userScripts: filtered });
+  return { success: true };
+}
+
+// Toggle script enabled/disabled
+async function toggleScript(scriptId, enabled) {
+  const scripts = await getScripts();
+  const script = scripts.find(s => s.id === scriptId);
+  if (script) {
+    script.enabled = enabled;
+    await chrome.storage.local.set({ userScripts: scripts });
+  }
+  return { success: true };
+}
+
+// Update script variables (configurable params)
+async function updateScriptVariables(scriptId, newVariables) {
+  const scripts = await getScripts();
+  const script = scripts.find(s => s.id === scriptId);
+  
+  if (!script) {
+    return { success: false, error: 'Script not found' };
+  }
+  
+  let content = script.content;
+  
+  // Replace each variable value in content
+  for (const variable of newVariables) {
+    const oldPattern = new RegExp(
+      `(const\\s+${variable.name}\\s*=\\s*['"])([^'"]*)(["']\\s*;)`,
+      'g'
+    );
+    content = content.replace(oldPattern, `$1${variable.value}$3`);
+  }
+  
+  // Update script
+  script.content = content;
+  script.variables = newVariables;
+  
+  await chrome.storage.local.set({ userScripts: scripts });
+  return { success: true };
+}
+
+// Get script by ID (including variables)
+async function getScriptById(scriptId) {
+  const scripts = await getScripts();
+  return scripts.find(s => s.id === scriptId) || null;
+}
+
+// Update script
+async function updateScript(scriptId) {
+  const scripts = await getScripts();
+  const script = scripts.find(s => s.id === scriptId);
+  
+  if (!script || !script.repoInfo) {
+    return { success: false, error: 'Script not found' };
+  }
+  
+  // Fetch latest content
+  const fetchResult = await fetchScriptContent(script.repoInfo);
+  if (!fetchResult.success) {
+    return { success: false, error: fetchResult.error };
+  }
+  
+  // Update script
+  const metadata = parseScriptMetadata(fetchResult.content);
+  script.content = fetchResult.content;
+  script.version = metadata.version;
+  script.lastUpdated = Date.now();
+  script.hasUpdate = false;
+  
+  await chrome.storage.local.set({ userScripts: scripts });
+  return { success: true };
+}
+
+// Check for updates
+async function checkForUpdates() {
+  const scripts = await getScripts();
+  let updatesFound = 0;
+  
+  for (const script of scripts) {
+    if (!script.repoInfo) continue;
+    
+    const fetchResult = await fetchScriptContent(script.repoInfo);
+    if (fetchResult.success) {
+      const metadata = parseScriptMetadata(fetchResult.content);
+      if (metadata.version !== script.version) {
+        script.hasUpdate = true;
+        updatesFound++;
+      }
+    }
+  }
+  
+  await chrome.storage.local.set({ userScripts: scripts });
+  return { success: true, updatesFound };
+}
+
+// Get scripts that match URL
+async function getScriptsForUrl(url) {
+  const scripts = await getScripts();
+  return scripts.filter(script => {
+    if (!script.enabled) return false;
+    
+    // Check matches
+    for (const pattern of script.matches) {
+      if (matchPattern(url, pattern)) return true;
+    }
+    
+    return false;
+  });
+}
+
+// Simple pattern matching
+function matchPattern(url, pattern) {
+  if (pattern === '*://*/*') return true;
+  
+  // Convert wildcard pattern to regex
+  const regexPattern = pattern
+    .replace(/\./g, '\\.')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.');
+  
+  const regex = new RegExp('^' + regexPattern + '$');
+  return regex.test(url);
+}
+
+// Inject scripts for tab
+async function injectScriptsForTab(tabId, url) {
+  const scripts = await getScriptsForUrl(url);
+  
+  if (scripts.length === 0) {
+    return { success: true, count: 0 };
+  }
+  
+  console.log(`[ScriptLoader] Injecting ${scripts.length} script(s) into tab ${tabId}`);
+  
+  for (const script of scripts) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tabId, allFrames: true }, // Inject vào tất cả frames
+        world: 'MAIN',
+        func: (scriptContent) => {
+          // Wrapper để chờ DOM ready và retry
+          function executeWithRetry(content, maxRetries = 5, delay = 500) {
+            let retries = 0;
+            
+            function tryExecute() {
+              try {
+                // Check if DOM has meaningful content
+                if (document.body && document.body.textContent.length > 100) {
+                  console.log('[ScriptLoader] DOM ready, executing script...');
+                  eval(content);
+                } else if (retries < maxRetries) {
+                  retries++;
+                  console.log('[ScriptLoader] DOM not ready, retry', retries);
+                  setTimeout(tryExecute, delay);
+                } else {
+                  // Force execute after max retries
+                  console.log('[ScriptLoader] Max retries reached, force executing...');
+                  eval(content);
+                }
+              } catch (error) {
+                console.error('[ScriptLoader] Script execution error:', error);
+              }
+            }
+            
+            // Start execution
+            if (document.readyState === 'loading') {
+              document.addEventListener('DOMContentLoaded', tryExecute);
+            } else {
+              tryExecute();
+            }
+          }
+          
+          executeWithRetry(scriptContent);
+        },
+        args: [script.content]
+      });
+      
+      console.log(`[ScriptLoader] Injected: ${script.name}`);
+    } catch (error) {
+      console.error(`[ScriptLoader] Failed to inject ${script.name}:`, error);
+    }
+  }
+  
+  return { success: true, count: scripts.length };
+}
+
+// Listen for tab updates to inject scripts
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url) {
+    // Skip chrome:// and extension pages
+    if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
+      return;
+    }
+    
+    await injectScriptsForTab(tabId, tab.url);
+  }
+});
+
+// Note: Default script is now added by popup.js when script list is empty

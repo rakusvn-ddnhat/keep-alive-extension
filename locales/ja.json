@@ -57,5 +57,13 @@
   "notifySound": "サウンド:",
   "chatNotifierHelp": "💡 新しいメッセージが届いたときに通知を表示（通知許可が必要）",
   "testNotify": "🔔 通知テスト",
+  "scriptLoader": "📜 スクリプトローダー",
+  "scriptLoaderHelp": "💡 ドメインごとにJSスクリプトを自動注入",
+  "scriptUrlPlaceholder": "スクリプトURL（GitHub/Raw JS）",
+  "add": "追加",
+  "scriptsInstalled": "スクリプトがインストール済み",
+  "scriptsHaveUpdates": "スクリプトに更新があります！",
+  "enterScriptUrl": "スクリプトURLを入力してください",
+  "confirmRemoveScript": "このスクリプトを削除しますか？",
   "copyright": "© Đoàn Duy Nhất"
 }

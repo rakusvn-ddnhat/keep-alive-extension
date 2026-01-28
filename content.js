@@ -2314,3 +2314,8 @@ function debounce(func, wait) {
 function clearSheetsHighlight() {
   removeSheetsOverlay();
 }
+
+// ==================== SCRIPT LOADER ====================
+// Scripts will be injected by background.js via chrome.scripting.executeScript
+// Content script just needs to be present to trigger injection
+console.log('[ScriptLoader] Content script loaded for:', window.location.href);

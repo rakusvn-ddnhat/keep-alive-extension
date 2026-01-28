@@ -57,5 +57,13 @@
   "notifySound": "Âm thanh:",
   "chatNotifierHelp": "💡 Hiển thị notification khi có tin nhắn mới (cần cho phép notification)",
   "testNotify": "🔔 Test Notification",
+  "scriptLoader": "📜 Script Loader",
+  "scriptLoaderHelp": "💡 Tự động nhúng script JS vào các trang web theo domain",
+  "scriptUrlPlaceholder": "Nhập URL script (GitHub/Raw JS)",
+  "add": "Thêm",
+  "scriptsInstalled": "script(s) đã cài",
+  "scriptsHaveUpdates": "script(s) có bản cập nhật!",
+  "enterScriptUrl": "Vui lòng nhập URL script",
+  "confirmRemoveScript": "Xóa script này?",
   "copyright": "© Đoàn Duy Nhất"
 }
