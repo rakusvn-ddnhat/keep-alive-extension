@@ -1,4 +1,6 @@
 {
+  "extName": "Dev Toolbox",
+  "extDescription": "Block tab close, Record Requests, Copy Mode, Translate Mode, Web Crosshair, API Tester, Zabbix PDF, Script Loader",
   "blockCloseTab": "Block Close Tab",
   "recordRequests": "Record Requests",
   "showIndicator": "Show Recording Status Button",

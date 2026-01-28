@@ -775,12 +775,16 @@ document.addEventListener('DOMContentLoaded', () => {
       const hasVars = script.variables && script.variables.length > 0;
       const editIcon = hasVars ? '⚙️' : '✏️';
       const editTitle = hasVars ? 'Cấu hình biến' : 'Sửa';
+      const isRemote = script.sourceType === 'url' || script.repoInfo || script.sourceUrl;
+      const sourceIcon = isRemote ? '🔗' : '📁';
+      const sourceTitle = isRemote ? 'Từ URL' : 'Từ file local';
+      const updateTitle = isRemote ? 'Cập nhật từ URL' : 'Chọn file mới để cập nhật';
       
       return `
         <div class="script-item">
           <div class="script-info">
             <div class="script-name" title="${script.name}">${script.name}</div>
-            <div class="script-match" title="${matchDisplay}">🌐 ${matchDisplay}</div>
+            <div class="script-match" title="${matchDisplay}">${sourceIcon} ${matchDisplay}</div>
             <div class="script-meta">
               <span class="script-version">v${script.version || '1.0'}</span>
               ${hasVars ? '<span style="background:#e8f5e9;color:#388e3c;padding:1px 4px;border-radius:3px;font-size:9px;">⚙️ ' + script.variables.length + ' vars</span>' : ''}
@@ -789,7 +793,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
           <div class="script-toggle ${script.enabled ? 'active' : ''}" data-id="${script.id}" title="${script.enabled ? 'Tắt' : 'Bật'}"></div>
           <div class="script-actions">
-            ${script.hasUpdate ? `<button class="btn-update" data-id="${script.id}" data-action="update" title="Cập nhật">⬆️</button>` : ''}
+            <button class="btn-update" data-id="${script.id}" data-action="${isRemote ? 'update' : 'reload'}" title="${updateTitle}">🔄</button>
             <button class="btn-edit" data-id="${script.id}" data-action="edit" title="${editTitle}">${editIcon}</button>
             <button class="btn-remove" data-id="${script.id}" data-action="remove" title="Xóa">🗑️</button>
           </div>
@@ -823,6 +827,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (action === 'update') {
           updateScript(scriptId);
+        } else if (action === 'reload') {
+          reloadLocalScript(scriptId);
         } else if (action === 'edit') {
           editScript(scriptId);
         } else if (action === 'remove') {
@@ -834,6 +840,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
     });
+  }
+
+  // Reload local script (choose new file)
+  let pendingReloadScriptId = null;
+  
+  function reloadLocalScript(scriptId) {
+    pendingReloadScriptId = scriptId;
+    const fileInput = document.getElementById('scriptFileInput');
+    fileInput.click();
   }
 
   // Update script count
@@ -860,19 +875,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Update single script
+  // Update single script from URL
   function updateScript(scriptId) {
-    const btn = event.target;
-    btn.disabled = true;
-    btn.textContent = '⏳';
+    const btn = event?.target;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '⏳';
+    }
+    
+    showLoading('Đang cập nhật script...');
     
     chrome.runtime.sendMessage({ action: 'updateScript', scriptId: scriptId }, (response) => {
+      hideLoading();
       if (response?.success) {
         loadScripts();
       } else {
         alert(response?.error || 'Update failed');
-        btn.disabled = false;
-        btn.textContent = '⬆️';
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '🔄';
+        }
       }
     });
   }
@@ -914,6 +936,14 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
           <div style="font-size: 10px; color: #666; margin-bottom: 10px;">
             v${script.version} | ${script.matches[0] || 'All sites'}
+          </div>
+          <!-- Iframe setting -->
+          <div style="margin-bottom: 12px; padding: 8px; background: #f5f5f5; border-radius: 4px;">
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer;">
+              <input type="checkbox" id="runInIframesCheckbox" ${script.runInIframes !== false ? 'checked' : ''}>
+              <span>🖼️ Chạy trong iframe</span>
+            </label>
+            <div style="font-size: 9px; color: #888; margin-top: 3px; margin-left: 22px;">Tắt nếu chỉ muốn script chạy ở trang chính</div>
           </div>
           <div id="varsContainer">
             ${script.variables.map((v, i) => `
@@ -960,10 +990,14 @@ document.addEventListener('DOMContentLoaded', () => {
         description: script.variables[parseInt(input.dataset.varIndex)].description
       }));
       
+      // Get iframe setting
+      const runInIframes = document.getElementById('runInIframesCheckbox')?.checked ?? true;
+      
       chrome.runtime.sendMessage({ 
         action: 'updateScriptVariables', 
         scriptId: script.id, 
-        variables: newVariables 
+        variables: newVariables,
+        runInIframes: runInIframes
       }, (response) => {
         if (response?.success) {
           document.getElementById('scriptVarsModal').remove();
@@ -976,8 +1010,30 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  // Add script button
-  document.getElementById('addScript')?.addEventListener('click', () => {
+  // Helper functions for loading status
+  function showLoading(text) {
+    const status = document.getElementById('scriptLoadingStatus');
+    const textEl = document.getElementById('scriptLoadingText');
+    if (status && textEl) {
+      textEl.textContent = text || 'Đang tải...';
+      status.style.display = 'block';
+    }
+  }
+  
+  function hideLoading() {
+    const status = document.getElementById('scriptLoadingStatus');
+    if (status) status.style.display = 'none';
+  }
+  
+  function resetFileInput() {
+    const fileLabel = document.getElementById('scriptFileLabel');
+    const fileText = document.getElementById('filePickerText');
+    if (fileLabel) fileLabel.style.background = '#f5f5f5';
+    if (fileText) fileText.textContent = '📁';
+  }
+  
+  // Function to add script from URL
+  function addScriptFromUrl() {
     const urlInput = document.getElementById('scriptUrl');
     const url = urlInput.value.trim();
     
@@ -986,20 +1042,41 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const btn = document.getElementById('addScript');
-    btn.disabled = true;
-    btn.textContent = '⏳';
+    const addBtn = document.getElementById('addScriptBtn');
+    if (addBtn) {
+      addBtn.disabled = true;
+      addBtn.textContent = '⏳';
+    }
+    
+    showLoading('Đang tải script từ URL...');
+    urlInput.disabled = true;
     
     chrome.runtime.sendMessage({ action: 'addScript', data: { url: url } }, (response) => {
+      hideLoading();
+      urlInput.disabled = false;
+      if (addBtn) {
+        addBtn.disabled = false;
+        addBtn.textContent = '➕';
+      }
+      
       if (response?.success) {
         urlInput.value = '';
         loadScripts();
       } else {
         alert(response?.error || 'Failed to add script');
       }
-      btn.disabled = false;
-      btn.textContent = messages['add'] || 'Thêm';
     });
+  }
+
+  // Add script from URL - press Enter to add
+  document.getElementById('scriptUrl')?.addEventListener('keypress', (e) => {
+    if (e.key !== 'Enter') return;
+    addScriptFromUrl();
+  });
+  
+  // Add script from URL - click button
+  document.getElementById('addScriptBtn')?.addEventListener('click', () => {
+    addScriptFromUrl();
   });
 
   // Check updates button
@@ -1019,6 +1096,196 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // Download script template button
+  document.getElementById('downloadScriptTemplate')?.addEventListener('click', () => {
+    const templateScript = `// ==UserScript==
+// @name         My Custom Script
+// @namespace    http://tampermonkey.net/
+// @version      1.0
+// @description  Mô tả script của bạn ở đây
+// @author       Your Name
+// @match        https://example.com/*
+// @match        https://*.example.com/*
+// @grant        none
+// ==/UserScript==
+
+/*
+ * 📋 HƯỚNG DẪN SỬ DỤNG:
+ * 
+ * 1. METADATA (phần ==UserScript==):
+ *    - @name: Tên script (hiển thị trong danh sách)
+ *    - @version: Phiên bản (tăng lên khi update để extension detect)
+ *    - @description: Mô tả ngắn về chức năng
+ *    - @author: Tên tác giả
+ *    - @match: URL pattern để script chạy (có thể có nhiều @match)
+ *              Ví dụ:
+ *              - https://example.com/*        → Tất cả trang trên example.com
+ *              - https://*.example.com/*      → Tất cả subdomain
+ *              - *://example.com/page/*       → Cả http và https
+ *              - https://example.com/app/main → Chỉ 1 trang cụ thể
+ *    - @grant: Quyền đặc biệt (thường để "none")
+ * 
+ * 2. BIẾN CẤU HÌNH (Configurable Variables):
+ *    - Khai báo dạng: const tenBien = 'giaTri'; // Mô tả
+ *    - Extension sẽ tự động detect và cho phép edit qua UI
+ *    - Ví dụ bên dưới có 3 biến: userName, autoClickDelay, enableFeature
+ * 
+ * 3. CÁCH UPLOAD LÊN GITHUB:
+ *    - Tạo repo mới hoặc dùng repo có sẵn
+ *    - Upload file .js này
+ *    - Copy URL (dạng github.com/user/repo/blob/main/script.js)
+ *    - Paste vào extension và nhấn "Thêm"
+ * 
+ * 4. CẬP NHẬT SCRIPT:
+ *    - Sửa code trên GitHub
+ *    - Tăng @version (ví dụ: 1.0 → 1.1)
+ *    - Trong extension, nhấn 🔄 để check update
+ *    - Nhấn ⬆️ để update
+ */
+
+(function() {
+    'use strict';
+
+    // ========== BIẾN CẤU HÌNH (có thể edit qua UI extension) ==========
+    const userName = 'Nguyen Van A'; // Tên người dùng để tự động điền
+    const autoClickDelay = '1000'; // Thời gian chờ trước khi auto-click (ms)
+    const enableFeature = 'true'; // Bật/tắt tính năng chính (true/false)
+    // ==================================================================
+
+    console.log('[MyScript] Script loaded!');
+    console.log('[MyScript] Config:', { userName, autoClickDelay, enableFeature });
+
+    // Kiểm tra xem có phải trang cần chạy không
+    function isTargetPage() {
+        // Ví dụ: Chỉ chạy trên trang có chứa text "Dashboard"
+        return document.body.textContent.includes('Dashboard');
+    }
+
+    // Hàm chờ element xuất hiện
+    function waitForElement(selector, timeout = 5000) {
+        return new Promise((resolve, reject) => {
+            const element = document.querySelector(selector);
+            if (element) {
+                resolve(element);
+                return;
+            }
+
+            const observer = new MutationObserver(() => {
+                const el = document.querySelector(selector);
+                if (el) {
+                    observer.disconnect();
+                    resolve(el);
+                }
+            });
+
+            observer.observe(document.body, { childList: true, subtree: true });
+
+            setTimeout(() => {
+                observer.disconnect();
+                reject(new Error('Element not found: ' + selector));
+            }, timeout);
+        });
+    }
+
+    // Hàm tự động điền input
+    function autoFillInput(selector, value) {
+        const input = document.querySelector(selector);
+        if (input) {
+            input.value = value;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            console.log('[MyScript] Filled:', selector, '=', value);
+            return true;
+        }
+        return false;
+    }
+
+    // Hàm auto-click button
+    function autoClickButton(selector) {
+        const button = document.querySelector(selector);
+        if (button) {
+            button.click();
+            console.log('[MyScript] Clicked:', selector);
+            return true;
+        }
+        return false;
+    }
+
+    // Hàm thêm badge/button tùy chỉnh vào trang
+    function addCustomBadge() {
+        const badge = document.createElement('div');
+        badge.id = 'my-custom-badge';
+        badge.innerHTML = '🚀 Script Active';
+        badge.style.cssText = \`
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            z-index: 10000;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        \`;
+        badge.onclick = () => badge.remove();
+        document.body.appendChild(badge);
+    }
+
+    // ========== LOGIC CHÍNH ==========
+    function main() {
+        console.log('[MyScript] Running main logic...');
+
+        // Kiểm tra feature có được bật không
+        if (enableFeature !== 'true') {
+            console.log('[MyScript] Feature disabled, exiting.');
+            return;
+        }
+
+        // Thêm badge
+        addCustomBadge();
+
+        // Ví dụ: Tự động điền form
+        // autoFillInput('#username', userName);
+        // autoFillInput('#email', 'example@email.com');
+
+        // Ví dụ: Auto-click sau delay
+        // setTimeout(() => {
+        //     autoClickButton('#submit-btn');
+        // }, parseInt(autoClickDelay));
+
+        // Ví dụ: Chờ element rồi xử lý
+        // waitForElement('#dynamic-content').then(el => {
+        //     console.log('[MyScript] Found element:', el);
+        //     // Xử lý element
+        // }).catch(err => {
+        //     console.log('[MyScript]', err.message);
+        // });
+    }
+
+    // Chạy khi DOM sẵn sàng
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', main);
+    } else {
+        // DOM đã sẵn sàng, nhưng đợi thêm 1 chút để content load
+        setTimeout(main, 500);
+    }
+
+})();
+`;
+
+    // Create and download file
+    const blob = new Blob([templateScript], { type: 'text/javascript' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'my-custom-script.user.js';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
   // Update all scripts button
   document.getElementById('updateAllScripts')?.addEventListener('click', () => {
     const scriptsToUpdate = currentScripts.filter(s => s.hasUpdate);
@@ -1030,6 +1297,70 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
       loadScripts();
     }, 1000);
+  });
+
+  // File input handler for local scripts - auto add on file select
+  document.getElementById('scriptFileInput')?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const fileLabel = document.getElementById('scriptFileLabel');
+    const fileText = document.getElementById('filePickerText');
+    
+    // Show loading state
+    if (fileLabel) fileLabel.style.background = '#e3f2fd';
+    if (fileText) fileText.textContent = '⏳ Loading...';
+    showLoading(`Đang đọc file: ${file.name}`);
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target.result;
+      const fileName = file.name;
+      
+      // Check if this is a reload or new add
+      if (pendingReloadScriptId) {
+        // Reload existing script with new content
+        showLoading('Đang reload script...');
+        chrome.runtime.sendMessage({
+          action: 'reloadLocalScript',
+          scriptId: pendingReloadScriptId,
+          content: content,
+          fileName: fileName
+        }, (response) => {
+          hideLoading();
+          resetFileInput();
+          if (response?.success) {
+            loadScripts();
+          } else {
+            alert(response?.error || 'Failed to reload script');
+          }
+          pendingReloadScriptId = null;
+        });
+      } else {
+        // Add new script from file - use correct action name
+        showLoading('Đang thêm script...');
+        chrome.runtime.sendMessage({
+          action: 'addScriptFromContent',
+          data: {
+            name: fileName,
+            content: content,
+            source: 'local'
+          }
+        }, (response) => {
+          hideLoading();
+          resetFileInput();
+          if (response?.success) {
+            loadScripts();
+          } else {
+            alert(response?.error || 'Failed to add script');
+          }
+        });
+      }
+      
+      // Clear file input
+      e.target.value = '';
+    };
+    reader.readAsText(file);
   });
 
   // Toggle script list visibility

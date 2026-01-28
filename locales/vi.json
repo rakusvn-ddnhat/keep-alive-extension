@@ -1,4 +1,6 @@
 {
+  "extName": "Dev Toolbox",
+  "extDescription": "Chặn đóng tab, Record Requests, Copy Mode, Translate Mode, Thước kẻ màn hình, API Tester, Zabbix PDF, Script Loader",
   "blockCloseTab": "Chặn đóng Tab",
   "recordRequests": "Record Requests",
   "showIndicator": "Hiện nút trạng thái ghi request",
@@ -31,7 +33,7 @@
   "translateError": "Lỗi dịch",
   "translateModeOn": "🈯 Dịch: BẬT",
   "translateModeOff": "🈯 Dịch: TẮT",
-  "webCrosshair": "➕ Web Crosshair",
+  "webCrosshair": "➕ Thước kẻ màn hình",
   "crosshairMode": "Chế độ:",
   "crosshairColor": "Màu:",
   "crosshairHorizontal": "Đường ngang",

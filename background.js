@@ -268,7 +268,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       getScriptById(message.scriptId).then(script => sendResponse(script));
       return true;
     } else if (message.action === 'updateScriptVariables') {
-      updateScriptVariables(message.scriptId, message.variables).then(result => sendResponse(result));
+      updateScriptVariables(message.scriptId, message.variables, message.runInIframes).then(result => sendResponse(result));
+      return true;
+    } else if (message.action === 'addScriptFromContent') {
+      addScriptFromContent(message.data).then(result => sendResponse(result));
+      return true;
+    } else if (message.action === 'reloadScript') {
+      reloadScript(message.scriptId).then(result => sendResponse(result));
+      return true;
+    } else if (message.action === 'reloadLocalScript') {
+      reloadLocalScript(message.scriptId, message.content, message.fileName).then(result => sendResponse(result));
+      return true;
+    } else if (message.action === 'executeUserScript') {
+      // Execute user script in MAIN world using chrome.scripting API
+      // Pass frameId to inject only in the specific frame that requested it
+      executeUserScriptInTab(sender.tab.id, sender.frameId, message.scriptContent, message.scriptName)
+        .then(result => sendResponse(result));
       return true;
     }
   } catch (error) {
@@ -915,6 +930,169 @@ async function addScript(data) {
   return { success: true, script };
 }
 
+// Add script from local file content
+async function addScriptFromContent(data) {
+  const { name, content, source } = data;
+  
+  // Parse metadata and variables
+  const metadata = parseScriptMetadata(content);
+  
+  // Create script object
+  const script = {
+    id: Date.now().toString(),
+    name: metadata.name || name.replace('.js', '').replace('.user', ''),
+    version: metadata.version || '1.0.0',
+    description: metadata.description || 'Local script',
+    author: metadata.author || 'Local',
+    matches: metadata.matches.length > 0 ? metadata.matches : ['*://*/*'],
+    includes: metadata.includes,
+    excludes: metadata.excludes,
+    variables: metadata.variables,
+    content: content,
+    url: null, // No URL for local scripts
+    sourceUrl: null,
+    repoInfo: null,
+    source: source || 'local', // Mark as local file
+    enabled: true,
+    lastUpdated: Date.now(),
+    hasUpdate: false
+  };
+  
+  // Save to storage
+  const scripts = await getScripts();
+  scripts.push(script);
+  await chrome.storage.local.set({ userScripts: scripts });
+  
+  return { success: true, script };
+}
+
+// Reload script from URL (for URL-based scripts)
+async function reloadScript(scriptId) {
+  const scripts = await getScripts();
+  const script = scripts.find(s => s.id === scriptId);
+  
+  if (!script) {
+    return { success: false, error: 'Script not found' };
+  }
+  
+  if (!script.sourceUrl && !script.repoInfo) {
+    return { success: false, error: 'Cannot reload local script' };
+  }
+  
+  try {
+    // Fetch new content
+    let content;
+    if (script.sourceUrl) {
+      const response = await fetch(script.sourceUrl);
+      if (!response.ok) {
+        return { success: false, error: `Failed to fetch: ${response.status}` };
+      }
+      content = await response.text();
+    } else if (script.repoInfo) {
+      const fetchResult = await fetchScriptContent(script.repoInfo);
+      if (!fetchResult.success) {
+        return { success: false, error: fetchResult.error };
+      }
+      content = fetchResult.content;
+    }
+    
+    // Re-parse metadata
+    const metadata = parseScriptMetadata(content);
+    
+    // Preserve user-modified variable values
+    const oldVariables = script.variables || [];
+    const newVariables = metadata.variables || [];
+    
+    // Merge: keep user values for existing variables, add new ones
+    for (const newVar of newVariables) {
+      const oldVar = oldVariables.find(v => v.name === newVar.name);
+      if (oldVar) {
+        newVar.value = oldVar.value; // Preserve user value
+      }
+    }
+    
+    // Apply user variable values to content
+    for (const variable of newVariables) {
+      const oldPattern = new RegExp(
+        `(const\\s+${variable.name}\\s*=\\s*['"])([^'"]*)(["']\\s*;)`,
+        'g'
+      );
+      content = content.replace(oldPattern, `$1${variable.value}$3`);
+    }
+    
+    // Update script with all new metadata
+    script.content = content;
+    script.name = metadata.name || script.name;
+    script.version = metadata.version || script.version;
+    script.description = metadata.description || script.description;
+    script.matches = metadata.matches.length > 0 ? metadata.matches : script.matches;
+    script.includes = metadata.includes;
+    script.excludes = metadata.excludes;
+    script.variables = newVariables;
+    script.lastUpdated = Date.now();
+    script.hasUpdate = false;
+    
+    await chrome.storage.local.set({ userScripts: scripts });
+    return { success: true, script };
+  } catch (error) {
+    console.error('[Background] Error reloading script:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Reload local script with new file content
+async function reloadLocalScript(scriptId, content, fileName) {
+  const scripts = await getScripts();
+  const script = scripts.find(s => s.id === scriptId);
+  
+  if (!script) {
+    return { success: false, error: 'Script not found' };
+  }
+  
+  try {
+    // Re-parse metadata
+    const metadata = parseScriptMetadata(content);
+    
+    // Preserve user-modified variable values
+    const oldVariables = script.variables || [];
+    const newVariables = metadata.variables || [];
+    
+    // Merge: keep user values for existing variables, add new ones
+    for (const newVar of newVariables) {
+      const oldVar = oldVariables.find(v => v.name === newVar.name);
+      if (oldVar) {
+        newVar.value = oldVar.value;
+      }
+    }
+    
+    // Apply user variable values to content
+    for (const variable of newVariables) {
+      const oldPattern = new RegExp(
+        `(const\\s+${variable.name}\\s*=\\s*['"])([^'"]*)(["']\\s*;)`,
+        'g'
+      );
+      content = content.replace(oldPattern, `$1${variable.value}$3`);
+    }
+    
+    // Update script with all new metadata
+    script.content = content;
+    script.name = metadata.name || fileName?.replace('.js', '').replace('.user', '') || script.name;
+    script.version = metadata.version || script.version;
+    script.description = metadata.description || script.description;
+    script.matches = metadata.matches.length > 0 ? metadata.matches : script.matches;
+    script.includes = metadata.includes;
+    script.excludes = metadata.excludes;
+    script.variables = newVariables;
+    script.lastUpdated = Date.now();
+    
+    await chrome.storage.local.set({ userScripts: scripts });
+    return { success: true, script };
+  } catch (error) {
+    console.error('[Background] Error reloading local script:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 // Remove script
 async function removeScript(scriptId) {
   const scripts = await getScripts();
@@ -935,7 +1113,7 @@ async function toggleScript(scriptId, enabled) {
 }
 
 // Update script variables (configurable params)
-async function updateScriptVariables(scriptId, newVariables) {
+async function updateScriptVariables(scriptId, newVariables, runInIframes) {
   const scripts = await getScripts();
   const script = scripts.find(s => s.id === scriptId);
   
@@ -958,6 +1136,11 @@ async function updateScriptVariables(scriptId, newVariables) {
   script.content = content;
   script.variables = newVariables;
   
+  // Update runInIframes setting if provided
+  if (runInIframes !== undefined) {
+    script.runInIframes = runInIframes;
+  }
+  
   await chrome.storage.local.set({ userScripts: scripts });
   return { success: true };
 }
@@ -974,24 +1157,52 @@ async function updateScript(scriptId) {
   const script = scripts.find(s => s.id === scriptId);
   
   if (!script || !script.repoInfo) {
-    return { success: false, error: 'Script not found' };
+    return { success: false, error: 'Script not found or no source URL' };
   }
   
-  // Fetch latest content
-  const fetchResult = await fetchScriptContent(script.repoInfo);
-  if (!fetchResult.success) {
-    return { success: false, error: fetchResult.error };
+  try {
+    // Fetch latest content
+    const fetchResult = await fetchScriptContent(script.repoInfo);
+    if (!fetchResult.success) {
+      return { success: false, error: fetchResult.error };
+    }
+    
+    let content = fetchResult.content;
+    const metadata = parseScriptMetadata(content);
+    
+    // Preserve user-modified variable values
+    const oldVariables = script.variables || [];
+    const newVariables = metadata.variables || [];
+    
+    for (const newVar of newVariables) {
+      const oldVar = oldVariables.find(v => v.name === newVar.name);
+      if (oldVar) {
+        newVar.value = oldVar.value;
+      }
+    }
+    
+    // Apply user variable values to content
+    for (const variable of newVariables) {
+      const oldPattern = new RegExp(
+        `(const\\s+${variable.name}\\s*=\\s*['"])([^'"]*)(["']\\s*;)`,
+        'g'
+      );
+      content = content.replace(oldPattern, `$1${variable.value}$3`);
+    }
+    
+    // Update script
+    script.content = content;
+    script.version = metadata.version || script.version;
+    script.variables = newVariables;
+    script.lastUpdated = Date.now();
+    script.hasUpdate = false;
+    
+    await chrome.storage.local.set({ userScripts: scripts });
+    return { success: true };
+  } catch (error) {
+    console.error('[Background] Error updating script:', error);
+    return { success: false, error: error.message };
   }
-  
-  // Update script
-  const metadata = parseScriptMetadata(fetchResult.content);
-  script.content = fetchResult.content;
-  script.version = metadata.version;
-  script.lastUpdated = Date.now();
-  script.hasUpdate = false;
-  
-  await chrome.storage.local.set({ userScripts: scripts });
-  return { success: true };
 }
 
 // Check for updates
@@ -1058,44 +1269,69 @@ async function injectScriptsForTab(tabId, url) {
   for (const script of scripts) {
     try {
       await chrome.scripting.executeScript({
-        target: { tabId: tabId, allFrames: true }, // Inject vào tất cả frames
-        world: 'MAIN',
-        func: (scriptContent) => {
-          // Wrapper để chờ DOM ready và retry
-          function executeWithRetry(content, maxRetries = 5, delay = 500) {
-            let retries = 0;
-            
-            function tryExecute() {
-              try {
-                // Check if DOM has meaningful content
-                if (document.body && document.body.textContent.length > 100) {
-                  console.log('[ScriptLoader] DOM ready, executing script...');
-                  eval(content);
-                } else if (retries < maxRetries) {
-                  retries++;
-                  console.log('[ScriptLoader] DOM not ready, retry', retries);
-                  setTimeout(tryExecute, delay);
-                } else {
-                  // Force execute after max retries
-                  console.log('[ScriptLoader] Max retries reached, force executing...');
-                  eval(content);
-                }
-              } catch (error) {
-                console.error('[ScriptLoader] Script execution error:', error);
-              }
+        target: { tabId: tabId, allFrames: true },
+        world: 'ISOLATED',
+        func: (scriptContent, scriptName) => {
+          // Try multiple methods to inject script, bypassing CSP
+          function injectScript(content) {
+            // Method 1: Blob URL (bypasses most CSP)
+            try {
+              const blob = new Blob([content], { type: 'application/javascript' });
+              const blobUrl = URL.createObjectURL(blob);
+              const scriptEl = document.createElement('script');
+              scriptEl.src = blobUrl;
+              scriptEl.onload = () => {
+                URL.revokeObjectURL(blobUrl);
+                console.log(`[ScriptLoader] ✅ Injected via Blob URL: ${scriptName}`);
+              };
+              scriptEl.onerror = () => {
+                URL.revokeObjectURL(blobUrl);
+                console.warn(`[ScriptLoader] Blob URL failed, trying inline...`);
+                injectInline(content);
+              };
+              (document.head || document.documentElement).appendChild(scriptEl);
+              return;
+            } catch (e) {
+              console.warn('[ScriptLoader] Blob method failed:', e);
             }
             
-            // Start execution
-            if (document.readyState === 'loading') {
-              document.addEventListener('DOMContentLoaded', tryExecute);
-            } else {
-              tryExecute();
+            // Fallback to inline
+            injectInline(content);
+          }
+          
+          // Method 2: Inline script (for sites allowing unsafe-inline)
+          function injectInline(content) {
+            try {
+              const scriptEl = document.createElement('script');
+              scriptEl.textContent = content;
+              (document.head || document.documentElement).appendChild(scriptEl);
+              scriptEl.remove();
+              console.log(`[ScriptLoader] ✅ Injected via inline: ${scriptName}`);
+            } catch (e) {
+              console.error('[ScriptLoader] ❌ All injection methods failed:', e);
             }
           }
           
-          executeWithRetry(scriptContent);
+          // Wait for DOM ready then inject
+          function waitAndInject(content) {
+            function tryInject() {
+              if (document.head || document.documentElement) {
+                injectScript(content);
+              } else {
+                setTimeout(tryInject, 100);
+              }
+            }
+            
+            if (document.readyState === 'loading') {
+              document.addEventListener('DOMContentLoaded', tryInject);
+            } else {
+              tryInject();
+            }
+          }
+          
+          waitAndInject(scriptContent);
         },
-        args: [script.content]
+        args: [script.content, script.name]
       });
       
       console.log(`[ScriptLoader] Injected: ${script.name}`);
@@ -1107,16 +1343,80 @@ async function injectScriptsForTab(tabId, url) {
   return { success: true, count: scripts.length };
 }
 
-// Listen for tab updates to inject scripts
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url) {
-    // Skip chrome:// and extension pages
-    if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
-      return;
-    }
+// Listen for tab updates - DISABLED: content.js now handles injection
+// chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+//   if (changeInfo.status === 'complete' && tab.url) {
+//     // Skip chrome:// and extension pages
+//     if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
+//       return;
+//     }
+//     
+//     await injectScriptsForTab(tabId, tab.url);
+//   }
+// });
+
+// Execute user script in tab using chrome.scripting API with MAIN world
+async function executeUserScriptInTab(tabId, frameId, scriptContent, scriptName) {
+  try {
+    // Build target - if frameId is provided, inject only to that frame
+    const target = frameId !== undefined && frameId !== null
+      ? { tabId: tabId, frameIds: [frameId] }  // Specific frame only
+      : { tabId: tabId, allFrames: true };     // All frames (fallback)
     
-    await injectScriptsForTab(tabId, tab.url);
+    const results = await chrome.scripting.executeScript({
+      target: target,
+      world: 'MAIN', // Execute in page context
+      func: (code, name) => {
+        // Wrapper để chờ DOM ready và retry
+        function executeWithRetry(content, maxRetries = 5, delay = 500) {
+          let retries = 0;
+          
+          function tryExecute() {
+            try {
+              // Check if DOM has meaningful content
+              if (document.body && document.body.textContent.length > 100) {
+                console.log('[ScriptLoader] DOM ready, executing script...');
+                eval(content);
+                console.log(`[ScriptLoader] ✅ Script executed: ${name}`);
+                return true;
+              } else if (retries < maxRetries) {
+                retries++;
+                console.log('[ScriptLoader] DOM not ready, retry', retries);
+                setTimeout(tryExecute, delay);
+                return null; // Still trying
+              } else {
+                // Force execute after max retries
+                console.log('[ScriptLoader] Max retries reached, force executing...');
+                eval(content);
+                console.log(`[ScriptLoader] ✅ Script executed: ${name}`);
+                return true;
+              }
+            } catch (error) {
+              console.error(`[ScriptLoader] ❌ Script error: ${name}`, error);
+              return false;
+            }
+          }
+          
+          // Start execution
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', tryExecute);
+          } else {
+            tryExecute();
+          }
+        }
+        
+        executeWithRetry(code);
+        return { success: true }; // Return success since we started execution
+      },
+      args: [scriptContent, scriptName]
+    });
+    
+    console.log(`[Background] Executed script: ${scriptName}`);
+    return { success: true };
+  } catch (error) {
+    console.error(`[Background] Failed to execute script ${scriptName}:`, error);
+    return { success: false, error: error.message };
   }
-});
+}
 
 // Note: Default script is now added by popup.js when script list is empty

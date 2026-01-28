@@ -2316,6 +2316,174 @@ function clearSheetsHighlight() {
 }
 
 // ==================== SCRIPT LOADER ====================
-// Scripts will be injected by background.js via chrome.scripting.executeScript
-// Content script just needs to be present to trigger injection
-console.log('[ScriptLoader] Content script loaded for:', window.location.href);
+// Inject scripts as early as possible to try bypassing CSP
+(function injectUserScripts() {
+  const currentUrl = window.location.href;
+  console.log('[ScriptLoader] Content script loaded for:', currentUrl);
+  
+  // Skip chrome:// and extension pages
+  if (currentUrl.startsWith('chrome://') || currentUrl.startsWith('chrome-extension://')) {
+    return;
+  }
+  
+  // Check if URL matches pattern
+  function matchesPattern(url, pattern) {
+    try {
+      const escaped = pattern
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*/g, '.*')
+        .replace(/\?/g, '.');
+      const regex = new RegExp('^' + escaped + '$');
+      return regex.test(url);
+    } catch (e) {
+      return false;
+    }
+  }
+  
+  // Inject script using background (chrome.scripting.executeScript with MAIN world)
+  // Blob URL is blocked by CSP on many sites, so we go directly to background method
+  function injectScript(content, name) {
+    injectViaBackground(content, name);
+  }
+  
+  // Show CSP warning notification
+  function showCSPWarning(scriptName) {
+    // Wait for DOM to be ready
+    function showWarning() {
+      if (!document.body) {
+        setTimeout(showWarning, 100);
+        return;
+      }
+      
+      const existing = document.getElementById('scriptloader-csp-warning');
+      if (existing) existing.remove();
+      
+      const warning = document.createElement('div');
+      warning.id = 'scriptloader-csp-warning';
+      warning.innerHTML = `
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <span style="font-size: 24px;">⚠️</span>
+          <div>
+            <div style="font-weight: bold; margin-bottom: 5px;">Script bị chặn</div>
+            <div style="font-size: 12px; opacity: 0.9;">
+              Trang này có chính sách bảo mật nghiêm ngặt (CSP/Trusted Types) 
+              không cho phép chạy script bên ngoài.
+            </div>
+            <div style="font-size: 11px; margin-top: 5px; opacity: 0.7;">
+              Script: ${scriptName}
+            </div>
+          </div>
+          <button id="scriptloader-csp-close"
+            style="background: none; border: none; color: white; cursor: pointer; 
+                   font-size: 18px; padding: 0; margin-left: auto;">×</button>
+        </div>
+      `;
+      warning.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: linear-gradient(135deg, #ff6b6b 0%, #c0392b 100%);
+        color: white;
+        padding: 15px 20px;
+        border-radius: 10px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        z-index: 2147483647;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 13px;
+        max-width: 350px;
+        animation: scriptloader-slideIn 0.3s ease;
+      `;
+      
+      // Add animation keyframes
+      if (!document.getElementById('scriptloader-csp-style')) {
+        const style = document.createElement('style');
+        style.id = 'scriptloader-csp-style';
+        style.textContent = `
+          @keyframes scriptloader-slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+          }
+        `;
+        document.head?.appendChild(style);
+      }
+      
+      document.body.appendChild(warning);
+      
+      // Add close button handler
+      document.getElementById('scriptloader-csp-close')?.addEventListener('click', () => {
+        warning.remove();
+      });
+      
+      // Auto remove after 8 seconds
+      setTimeout(() => warning.remove(), 8000);
+    }
+    
+    showWarning();
+  }
+  
+  // Fallback: Ask background to inject
+  function injectViaBackground(content, name) {
+    chrome.runtime.sendMessage({
+      action: 'executeUserScript',
+      scriptContent: content,
+      scriptName: name
+    }, (response) => {
+      if (response?.success) {
+        console.log(`[ScriptLoader] ✅ Injected by background: ${name}`);
+      } else {
+        console.error(`[ScriptLoader] ❌ All methods failed for: ${name}`, response?.error);
+        // Show warning to user
+        showCSPWarning(name);
+      }
+    });
+  }
+  
+  // Get scripts and inject
+  chrome.storage.local.get(['userScripts'], (result) => {
+    const scripts = result.userScripts || [];
+    const isTopFrame = (window === window.top);
+    
+    scripts.forEach(script => {
+      if (!script.enabled) return;
+      
+      // Check if script should run in iframes
+      // Default is true (run in all frames) if not specified
+      const runInIframes = script.runInIframes !== false;
+      if (!isTopFrame && !runInIframes) {
+        // Script is set to only run in top frame, skip iframe
+        return;
+      }
+      
+      const matches = script.matches || ['*://*/*'];
+      const shouldInject = matches.some(pattern => matchesPattern(currentUrl, pattern));
+      
+      if (!shouldInject) return;
+      
+      // Check if script already injected in this frame (avoid duplicates)
+      const injectedKey = `__scriptloader_injected_${script.id}`;
+      if (window[injectedKey]) {
+        console.log(`[ScriptLoader] Already injected, skipping: ${script.name}`);
+        return;
+      }
+      window[injectedKey] = true;
+      
+      console.log(`[ScriptLoader] Preparing to inject: ${script.name}`);
+      
+      // Wait for head/documentElement to be ready
+      function tryInject() {
+        if (document.head || document.documentElement) {
+          injectScript(script.content, script.name);
+        } else {
+          requestAnimationFrame(tryInject);
+        }
+      }
+      
+      if (document.readyState === 'loading') {
+        // Try immediately for early injection
+        tryInject();
+      } else {
+        injectScript(script.content, script.name);
+      }
+    });
+  });
+})();

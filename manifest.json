@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Tab Keeper & Request Recorder",
+  "name": "Dev Toolbox",
   "version": "0.0.3",
-  "description": "Chặn đóng tab, ghi lại HTTP requests, Copy Mode, Translate Mode, Sheets Highlighter. © Đoàn Duy Nhất",
+  "description": "Chặn đóng tab, Record Requests, Copy Mode, Translate Mode, Thước kẻ màn hình, API Tester, Zabbix PDF, Script Loader. © Đoàn Duy Nhất",
   "permissions": [
     "storage",
     "webRequest",

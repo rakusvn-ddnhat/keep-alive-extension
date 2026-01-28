@@ -1,4 +1,6 @@
 {
+  "extName": "Dev Toolbox",
+  "extDescription": "タブを閉じるブロック、リクエスト記録、コピーモード、翻訳モード、Web Crosshair、API Tester、Zabbix PDF、Script Loader",
   "blockCloseTab": "タブを閉じるのをブロック",
   "recordRequests": "リクエストを記録",
   "showIndicator": "記録ステータスボタン表示",

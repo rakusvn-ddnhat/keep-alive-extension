@@ -214,7 +214,10 @@
   <div class="section">
     <div class="container">
       <span data-i18n="scriptLoader">📜 Script Loader</span>
-      <button id="checkScriptUpdates" class="toggle-list-btn" style="margin: 0; padding: 4px 8px; font-size: 11px;" title="Check for updates">🔄</button>
+      <div style="display: flex; gap: 4px;">
+        <button id="downloadScriptTemplate" class="toggle-list-btn" style="margin: 0; padding: 4px 8px; font-size: 11px;" title="Tải mẫu script">📄</button>
+        <button id="checkScriptUpdates" class="toggle-list-btn" style="margin: 0; padding: 4px 8px; font-size: 11px;" title="Check for updates">🔄</button>
+      </div>
     </div>
     <p style="font-size: 10px; color: #888; margin: 8px 0; line-height: 1.4;" data-i18n="scriptLoaderHelp">
       💡 Tự động nhúng script JS vào các trang web theo domain
@@ -223,9 +226,16 @@
       ⚠️ <span id="scriptUpdateCount">0</span> <span data-i18n="scriptsHaveUpdates">script(s) có bản cập nhật!</span>
       <button id="updateAllScripts" style="margin-left: 8px; padding: 2px 6px; font-size: 10px; background: #ffc107; border: none; border-radius: 3px; cursor: pointer;">Update All</button>
     </div>
-    <div style="display: flex; gap: 5px; margin: 8px 0;">
-      <input type="text" id="scriptUrl" data-i18n-placeholder="scriptUrlPlaceholder" placeholder="Nhập URL script (GitHub/Raw JS)" style="flex: 1; padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 11px;">
-      <button id="addScript" class="btn btn-secondary" style="width: auto; padding: 6px 12px; margin: 0; font-size: 11px;" data-i18n="add">Thêm</button>
+    <div style="display: flex; gap: 5px; margin: 8px 0; align-items: center;">
+      <input type="text" id="scriptUrl" data-i18n-placeholder="scriptUrlPlaceholder" placeholder="Nhập URL GitHub/JS" style="flex: 1; padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 11px;">
+      <button id="addScriptBtn" style="padding: 6px 12px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold;">➕</button>
+      <label id="scriptFileLabel" style="display: flex; align-items: center; justify-content: center; padding: 6px 10px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 12px; white-space: nowrap;" title="Chọn file JS từ máy tính">
+        <input type="file" id="scriptFileInput" accept=".js" style="display: none;">
+        <span id="filePickerText">📁</span>
+      </label>
+    </div>
+    <div id="scriptLoadingStatus" style="display: none; padding: 6px 8px; margin: 5px 0; background: #e3f2fd; border-radius: 4px; font-size: 11px; text-align: center;">
+      ⏳ <span id="scriptLoadingText">Đang tải...</span>
     </div>
     <div class="status" style="display: flex; align-items: center; justify-content: center; gap: 8px; margin: 5px 0;">
       <button class="toggle-list-btn" id="toggleScriptList">📋 Xem</button>
