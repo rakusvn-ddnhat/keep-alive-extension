@@ -205,7 +205,8 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // ==================== CHECK FOR UPDATES ====================
   const GITHUB_REPO = 'rakusvn-ddnhat/keep-alive-extension';
-  const GITHUB_MANIFEST_URL = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/manifest.json`;
+  // Use GitHub API instead of raw.githubusercontent.com to avoid cache
+  const GITHUB_MANIFEST_URL = `https://api.github.com/repos/${GITHUB_REPO}/contents/manifest.json`;
   const GITHUB_DOWNLOAD_URL = `https://github.com/${GITHUB_REPO}/archive/refs/heads/main.zip`;
   
   const checkUpdateBtn = document.getElementById('checkUpdateBtn');
@@ -232,13 +233,20 @@ document.addEventListener('DOMContentLoaded', () => {
     updateStatus.style.color = '#888';
     
     try {
-      const response = await fetch(GITHUB_MANIFEST_URL + '?t=' + Date.now(), {
-        cache: 'no-store'
+      const response = await fetch(GITHUB_MANIFEST_URL, {
+        cache: 'no-store',
+        headers: {
+          'Accept': 'application/vnd.github.v3+json'
+        }
       });
       
       if (!response.ok) throw new Error('Failed to fetch');
       
-      const remoteManifest = await response.json();
+      const apiResponse = await response.json();
+      // GitHub API returns base64 encoded content
+      const manifestContent = atob(apiResponse.content);
+      const remoteManifest = JSON.parse(manifestContent);
+      
       const currentVersion = chrome.runtime.getManifest().version;
       const latestVersion = remoteManifest.version;
       
