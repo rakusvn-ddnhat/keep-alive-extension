@@ -4738,24 +4738,37 @@ function clearSheetsHighlight() {
 
     indicator = document.createElement('div');
     indicator.id = 'ka-screenshot-indicator';
-    indicator.innerHTML = '📸 Chụp ngay';
 
     indicator.style.cssText = `
       position: fixed !important;
       bottom: 100px !important;
       right: 20px !important;
-      color: white !important;
-      padding: 8px 12px !important;
+      display: ${showScreenshotIndicator ? 'flex' : 'none'} !important;
+      align-items: center !important;
       border-radius: 20px !important;
       box-shadow: 0 2px 10px rgba(0,0,0,0.3) !important;
       z-index: 2147483647 !important;
       font-family: Arial, sans-serif !important;
-      cursor: pointer !important;
       user-select: none !important;
-      display: ${showScreenshotIndicator ? 'block' : 'none'} !important;
-      background: linear-gradient(135deg, #00bcd4, #0097a7) !important;
+      overflow: hidden !important;
       font-size: 11px !important;
       font-weight: bold !important;
+    `;
+
+    indicator.innerHTML = `
+      <span id="ka-ss-select" title="Kéo chọn vùng để chụp" style="
+        display: flex; align-items: center; gap: 5px;
+        padding: 8px 10px; cursor: pointer; color: white;
+        background: linear-gradient(135deg, #00bcd4, #0097a7);
+        border-right: 1px solid rgba(255,255,255,0.3);
+        white-space: nowrap; font-size: 15px; line-height: 1;
+      "><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M5 3H3v2"/><path d="M3 9v2"/><path d="M3 15v2"/><path d="M3 21h2"/><path d="M9 21h2"/><path d="M15 21h2"/><path d="M21 21h-2"/><path d="M21 15v2"/><path d="M21 9v2"/><path d="M21 3v2"/><path d="M15 3h2"/><path d="M9 3h2"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg></span>
+      <span id="ka-ss-full" title="Chụp toàn màn hình ngay" style="
+        display: flex; align-items: center;
+        padding: 8px 10px; cursor: pointer; color: white;
+        background: linear-gradient(135deg, #00bcd4, #0097a7);
+        font-size: 14px;
+      ">🖥️</span>
     `;
 
     // Drag
@@ -4771,6 +4784,9 @@ function clearSheetsHighlight() {
     } catch(e) {}
 
     indicator.addEventListener('mousedown', (e) => {
+      if (e.target.id === 'ka-ss-select' || e.target.id === 'ka-ss-full') {
+        // Cho phép drag từ bất kỳ vị trí
+      }
       initialX = e.clientX - xOffset; initialY = e.clientY - yOffset;
       isDragging = true; hasMoved = false;
     });
@@ -4789,13 +4805,25 @@ function clearSheetsHighlight() {
       }
     });
 
-    // Click = chụp ngay luôn (không bật/tắt)
-    indicator.addEventListener('click', (e) => {
+    // Nút "Chụp ngay" = mở overlay chọn vùng
+    const btnSelect = indicator.querySelector('#ka-ss-select');
+    btnSelect.addEventListener('click', (e) => {
       if (hasMoved) { hasMoved = false; return; }
       safeStorageGet(['screenshotScale', 'screenshotSaveFile'], (r) => {
         screenshotScale = parseInt(r.screenshotScale) || 2;
         screenshotSaveFile = r.screenshotSaveFile || false;
         createOverlay();
+      });
+    });
+
+    // Nút 🖥️ = chụp toàn màn hình ngay, không cần chọn vùng
+    const btnFull = indicator.querySelector('#ka-ss-full');
+    btnFull.addEventListener('click', (e) => {
+      if (hasMoved) { hasMoved = false; return; }
+      safeStorageGet(['screenshotScale', 'screenshotSaveFile'], (r) => {
+        screenshotScale = parseInt(r.screenshotScale) || 2;
+        screenshotSaveFile = r.screenshotSaveFile || false;
+        captureRegion(0, 0, window.innerWidth, window.innerHeight);
       });
     });
 
@@ -4806,7 +4834,7 @@ function clearSheetsHighlight() {
   function updateScreenshotIndicatorState(indicator) {
     if (!indicator) indicator = document.getElementById('ka-screenshot-indicator');
     if (!indicator) return;
-    indicator.style.display = showScreenshotIndicator ? 'block' : 'none';
+    indicator.style.display = showScreenshotIndicator ? 'flex' : 'none';
   }
 
   function initScreenshotIndicator() {
@@ -5155,7 +5183,33 @@ function getChatServiceColor(service) {
   return colors[service] || 'linear-gradient(135deg, #1a73e8, #4285f4)';
 }
 
+// Các hostname của trang AI - không hiện bubble khi đang ở chính trang đó
+const CHAT_AI_HOSTNAMES = ['gemini.google.com', 'chat.openai.com', 'copilot.microsoft.com'];
+
+function isOnAiPage() {
+  try {
+    return CHAT_AI_HOSTNAMES.some(h => location.hostname === h || location.hostname.endsWith('.' + h));
+  } catch(e) { return false; }
+}
+
 function createChatBubbleIndicator() {
+  if (!isTopFrame) return;
+
+  // Nếu đang ở trang AI, hỏi background xem có phải popup window không
+  // Nếu là popup (chat panel) thì không hiện bubble; nếu là tab thường thì hiện bình thường
+  if (isOnAiPage()) {
+    try {
+      chrome.runtime.sendMessage({ action: 'isAiPopupTab' }, (res) => {
+        if (res && res.isPopup) return; // Đang là popup panel - không tạo bubble
+        _doCreateChatBubble();
+      });
+    } catch(e) { /* extension invalid, bỏ qua */ }
+    return;
+  }
+  _doCreateChatBubble();
+}
+
+function _doCreateChatBubble() {
   if (!isTopFrame) return;
 
   // Nếu đã có, chỉ cập nhật trạng thái

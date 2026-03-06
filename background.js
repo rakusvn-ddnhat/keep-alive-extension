@@ -370,6 +370,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
       });
       return true;
+    } else if (message.action === 'isAiPopupTab') {
+      // Kiểm tra xem tab gửi request có nằm trong popup window không
+      chrome.windows.get(sender.tab ? sender.tab.windowId : -1, (win) => {
+        if (chrome.runtime.lastError) { sendResponse({ isPopup: false }); return; }
+        sendResponse({ isPopup: win.type === 'popup' });
+      });
+      return true;
     } else if (message.action === 'openChatAiWindow') {
       const AI_URLS = {
         gemini: 'https://gemini.google.com',
