@@ -727,47 +727,50 @@ async function downloadZabbixImages(tabId, taskId) {
         
         const total = images.length;
         let downloaded = 0;
-        
-        for (let i = 0; i < images.length; i++) {
-          const img = images[i];
+
+        // Build danh sách { src, name }
+        const items = Array.from(images).map((img, i) => {
           const src = img.src;
-          
           let name = 'chart_' + (i + 1);
           const graphMatch = src.match(/graphid=(\d+)/);
-          const itemMatch = src.match(/itemids%5B%5D=(\d+)/);
-          
+          const itemMatch  = src.match(/itemids%5B%5D=(\d+)/);
           if (graphMatch) name = 'graph_' + graphMatch[1];
           else if (itemMatch) name = 'item_' + itemMatch[1];
-          
-          try {
-            const response = await fetch(src);
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-            
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = name + '.png';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            
-            downloaded++;
-            
-            // Gửi progress update với taskId
-            const percent = Math.round((downloaded / total) * 100);
-            chrome.runtime.sendMessage({ 
-              action: 'zabbixDownloadProgress', 
-              taskId: taskId,
-              current: downloaded, 
-              total: total,
-              percent: percent 
-            });
-            
-            await new Promise(r => setTimeout(r, 300));
-          } catch (e) {
-            console.error('Error downloading:', name, e);
-          }
+          return { src, name };
+        });
+
+        // Fetch tất cả đồng thời
+        const fetchPromises = items.map(({ src, name }) =>
+          fetch(src)
+            .then(r => r.blob())
+            .then(blob => ({ name, blob, ok: true }))
+            .catch(e => { console.error('Error fetching:', name, e); return { name, ok: false }; })
+        );
+
+        const fetched = await Promise.all(fetchPromises);
+
+        // Trigger download từng file (nhanh, không cần delay vì đã có blob)
+        for (const item of fetched) {
+          if (!item.ok) continue;
+          const url = URL.createObjectURL(item.blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = item.name + '.png';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          // Delay nhỏ để browser không chặn nhiều download liên tiếp
+          await new Promise(r => setTimeout(r, 80));
+          URL.revokeObjectURL(url);
+          downloaded++;
+          const percent = Math.round((downloaded / total) * 100);
+          chrome.runtime.sendMessage({
+            action: 'zabbixDownloadProgress',
+            taskId: taskId,
+            current: downloaded,
+            total: total,
+            percent: percent
+          });
         }
         
         return { success: true, count: downloaded, total: total };
@@ -814,43 +817,51 @@ async function collectZabbixChartsForPdf(tabId, taskId) {
         }
         
         const total = images.length;
-        const chartData = [];
-        
-        for (let i = 0; i < images.length; i++) {
-          const img = images[i];
+
+        // Build danh sách { src, name } giữ đúng thứ tự
+        const items = Array.from(images).map((img, i) => {
           const src = img.src;
-          
           let name = 'Chart ' + (i + 1);
           const graphMatch = src.match(/graphid=(\d+)/);
-          const itemMatch = src.match(/itemids%5B%5D=(\d+)/);
+          const itemMatch  = src.match(/itemids%5B%5D=(\d+)/);
           if (graphMatch) name = 'Graph ID: ' + graphMatch[1];
           else if (itemMatch) name = 'Item ID: ' + itemMatch[1];
-          
-          try {
-            const response = await fetch(src);
-            const blob = await response.blob();
-            const base64 = await new Promise(resolve => {
+          return { src, name, index: i };
+        });
+
+        // Fetch tất cả đồng thời, giữ index để sort lại
+        let done = 0;
+        const fetchPromises = items.map(({ src, name, index }) =>
+          fetch(src)
+            .then(r => r.blob())
+            .then(blob => new Promise(resolve => {
               const reader = new FileReader();
-              reader.onloadend = () => resolve(reader.result);
+              reader.onloadend = () => {
+                done++;
+                chrome.runtime.sendMessage({
+                  action: 'zabbixPdfProgress',
+                  taskId: taskId,
+                  current: done,
+                  total: total,
+                  percent: Math.round((done / total) * 100)
+                });
+                resolve({ name, base64: reader.result, index, ok: true });
+              };
               reader.readAsDataURL(blob);
-            });
-            
-            chartData.push({ name, base64 });
-            
-            // Gửi progress update với taskId
-            const current = chartData.length;
-            const percent = Math.round((current / total) * 100);
-            chrome.runtime.sendMessage({ 
-              action: 'zabbixPdfProgress', 
-              taskId: taskId,
-              current: current, 
-              total: total,
-              percent: percent 
-            });
-          } catch (e) {
-            console.error('Error fetching:', name, e);
-          }
-        }
+            }))
+            .catch(e => {
+              console.error('Error fetching:', name, e);
+              done++;
+              return { name, index, ok: false };
+            })
+        );
+
+        const fetched = await Promise.all(fetchPromises);
+        // Lọc thành công và sắp xếp lại theo thứ tự gốc
+        const chartData = fetched
+          .filter(f => f.ok)
+          .sort((a, b) => a.index - b.index)
+          .map(({ name, base64 }) => ({ name, base64 }));
         
         return { success: true, charts: chartData, total: total };
       }
