@@ -860,7 +860,10 @@ async function collectZabbixChartsForPdf(tabId, taskId) {
     if (result?.success && result.charts?.length > 0) {
       // Save to storage and open PDF generator
       await chrome.storage.local.set({ zabbixCharts: result.charts });
-      chrome.tabs.create({ url: chrome.runtime.getURL('zabbix-pdf.html') });
+      // Nếu caller yêu cầu autoDownload thì mở tab với flag, tab sẽ tự xuất PDF và đóng
+      const autoDownload = true; // luôn auto download, không cần preview
+      const pdfUrl = chrome.runtime.getURL('zabbix-pdf.html') + (autoDownload ? '?autoDownload=1' : '');
+      chrome.tabs.create({ url: pdfUrl });
       
       if (zabbixDownloadTasks[taskId]) {
         zabbixDownloadTasks[taskId] = { 
