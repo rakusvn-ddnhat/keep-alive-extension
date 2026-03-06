@@ -352,7 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Load saved state
-  chrome.storage.local.get(['isEnabled', 'isRecording', 'domainFilter', 'showIndicator', 'copyModeEnabled', 'showCopyIndicator', 'translateModeEnabled', 'showTranslateIndicator', 'translateOnHover', 'translateTargetLang', 'sheetsHighlightEnabled', 'highlightMode', 'highlightColor', 'showCrosshairIndicator'], (result) => {
+  chrome.storage.local.get(['isEnabled', 'isRecording', 'domainFilter', 'showIndicator', 'copyModeEnabled', 'showCopyIndicator', 'translateModeEnabled', 'showTranslateIndicator', 'translateOnHover', 'translateTargetLang', 'sheetsHighlightEnabled', 'highlightMode', 'highlightColor', 'showCrosshairIndicator', 'chatBubbleEnabled', 'showChatBubble', 'chatAiService'], (result) => {
     toggleBtn.checked = result.isEnabled || false;
     recordBtn.checked = result.isRecording || false;
     
@@ -674,6 +674,65 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
   });
+
+  // ==================== CHAT AI BUBBLE ====================
+  const chatBubbleToggle = document.getElementById('chatBubbleToggle');
+  const showChatBubbleToggle = document.getElementById('showChatBubbleToggle');
+  const chatAiService = document.getElementById('chatAiService');
+
+  // Load saved state
+  chrome.storage.local.get(['chatBubbleEnabled', 'showChatBubble', 'chatAiService'], (result) => {
+    if (chatBubbleToggle) chatBubbleToggle.checked = result.chatBubbleEnabled || false;
+    if (showChatBubbleToggle) showChatBubbleToggle.checked = result.showChatBubble !== false;
+    if (chatAiService) chatAiService.value = result.chatAiService || 'gemini';
+  });
+
+  // Helper: đảm bảo content script đã inject rồi mới gửi message
+  function sendToTab(tabId, message) {
+    chrome.tabs.sendMessage(tabId, { action: 'ping' }, (pong) => {
+      if (chrome.runtime.lastError || !pong) {
+        // Chưa có content script → inject rồi gửi
+        chrome.scripting.executeScript(
+          { target: { tabId }, files: ['bergamot/offline-dictionary.js', 'content.js'] },
+          () => { setTimeout(() => chrome.tabs.sendMessage(tabId, message).catch(() => {}), 300); }
+        );
+      } else {
+        chrome.tabs.sendMessage(tabId, message).catch(() => {});
+      }
+    });
+  }
+
+  // Toggle bật/tắt bong bóng Chat AI
+  if (chatBubbleToggle) {
+    chatBubbleToggle.addEventListener('change', () => {
+      const enabled = chatBubbleToggle.checked;
+      chrome.storage.local.set({ chatBubbleEnabled: enabled });
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]) sendToTab(tabs[0].id, { action: 'toggleChatBubble', enabled });
+      });
+    });
+  }
+
+  // Toggle ẩn/hiện nút trên trang (eye icon)
+  if (showChatBubbleToggle) {
+    showChatBubbleToggle.addEventListener('change', () => {
+      const show = showChatBubbleToggle.checked;
+      chrome.storage.local.set({ showChatBubble: show });
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]) sendToTab(tabs[0].id, { action: 'toggleChatBubbleVisibility', show });
+      });
+    });
+  }
+
+  // Chọn dịch vụ AI
+  if (chatAiService) {
+    chatAiService.addEventListener('change', () => {
+      chrome.storage.local.set({ chatAiService: chatAiService.value });
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]) sendToTab(tabs[0].id, { action: 'updateChatAiService', service: chatAiService.value });
+      });
+    });
+  }
 
   // ==================== API TESTER ====================
   

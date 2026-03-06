@@ -225,6 +225,34 @@
     <div id="screenshotStatus" class="screenshot-status"></div>
   </div>
 
+  <!-- Chat AI Bubble Section -->
+  <div class="section">
+    <div class="container">
+      <span>🤖 Chat AI</span>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <label title="Ẩn/hiện nút Chat trên trang" style="cursor: pointer; font-size: 14px;" id="showChatBubbleLabel">
+          <input type="checkbox" id="showChatBubbleToggle" checked style="cursor: pointer;">
+          👁️
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="chatBubbleToggle">
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+    <div class="container" style="margin-top: 8px;">
+      <span style="font-size: 11px; color: #666;">Dịch vụ AI:</span>
+      <select id="chatAiService" style="padding: 4px 8px; font-size: 11px;">
+        <option value="gemini">✨ Gemini</option>
+        <option value="chatgpt">💬 ChatGPT</option>
+        <option value="copilot">🔷 Copilot</option>
+      </select>
+    </div>
+    <p style="font-size: 10px; color: #888; margin: 8px 0; line-height: 1.4;">
+      💡 Bật để hiện nút nổi <b>"Chat Ngay"</b> trên mọi trang. Nhấn 👁️ để ẩn tạm thời không che nội dung.
+    </p>
+  </div>
+
   <!-- Zabbix Charts Downloader Section -->
   <div class="section">
     <div class="container">

@@ -29,6 +29,11 @@ let sheetsHighlightActive = false;
 let currentHighlightedCells = [];
 let showCrosshairIndicator = true;
 
+// ==================== CHAT AI BUBBLE VARIABLES ====================
+let chatBubbleEnabled = false;
+let showChatBubble = true;
+let chatAiService = 'gemini';
+
 // Chỉ chạy trong top frame, không chạy trong iframe
 const isTopFrame = (window === window.top);
 
@@ -92,7 +97,7 @@ async function loadLanguage(lang) {
 }
 
 // Load saved language and showIndicator state
-safeStorageGet(['language', 'showIndicator', 'copyModeEnabled', 'showCopyIndicator', 'translateModeEnabled', 'showTranslateIndicator', 'translateOnHover', 'translateTargetLang', 'sheetsHighlightEnabled', 'highlightMode', 'highlightColor', 'showCrosshairIndicator', 'apiTesterEnabled', 'showApiTesterIndicator'], (result) => {
+safeStorageGet(['language', 'showIndicator', 'copyModeEnabled', 'showCopyIndicator', 'translateModeEnabled', 'showTranslateIndicator', 'translateOnHover', 'translateTargetLang', 'sheetsHighlightEnabled', 'highlightMode', 'highlightColor', 'showCrosshairIndicator', 'apiTesterEnabled', 'showApiTesterIndicator', 'chatBubbleEnabled', 'showChatBubble', 'chatAiService'], (result) => {
   const savedLang = result.language || 'vi';
   loadLanguage(savedLang);
   
@@ -117,12 +122,18 @@ safeStorageGet(['language', 'showIndicator', 'copyModeEnabled', 'showCopyIndicat
   highlightColor = result.highlightColor || '#fff3cd';
   showCrosshairIndicator = result.showCrosshairIndicator !== false;
   
+  // Load Chat AI Bubble states
+  chatBubbleEnabled = result.chatBubbleEnabled || false;
+  showChatBubble = result.showChatBubble !== false;
+  chatAiService = result.chatAiService || 'gemini';
+  
   // LUÔN tạo indicator ở top frame (để người dùng có thể click bật/tắt)
   // Sau đó mới ẩn/hiện dựa trên showCopyIndicator
   if (isTopFrame) {
     try { initCopyModeIndicator(); } catch(e) { console.error('[Keep Alive] initCopyModeIndicator error:', e); }
     try { initTranslateModeIndicator(); } catch(e) { console.error('[Keep Alive] initTranslateModeIndicator error:', e); }
     try { initCrosshairIndicator(); } catch(e) { console.error('[Keep Alive] initCrosshairIndicator error:', e); }
+    try { initChatBubbleIndicator(); } catch(e) { console.error('[Keep Alive] initChatBubbleIndicator error:', e); }
   }
   
   // LUÔN thêm CSS highlight vào TẤT CẢ FRAMES (kể cả frame con)
@@ -948,6 +959,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'toggleScreenshotIndicator') {
     if (isTopFrame && typeof window.__screenshotToggleIndicator === 'function') {
       window.__screenshotToggleIndicator(request.show);
+    }
+    sendResponse({ success: true });
+    return true;
+  }
+
+  if (request.action === 'toggleChatBubble') {
+    if (isTopFrame && typeof window.__chatBubbleToggle === 'function') {
+      window.__chatBubbleToggle(request.enabled);
+    }
+    sendResponse({ success: true });
+    return true;
+  }
+
+  if (request.action === 'toggleChatBubbleVisibility') {
+    if (isTopFrame && typeof window.__chatBubbleSetVisible === 'function') {
+      window.__chatBubbleSetVisible(request.show);
+    }
+    sendResponse({ success: true });
+    return true;
+  }
+
+  if (request.action === 'updateChatAiService') {
+    if (isTopFrame && typeof window.__chatBubbleSetService === 'function') {
+      window.__chatBubbleSetService(request.service);
     }
     sendResponse({ success: true });
     return true;
@@ -4784,25 +4819,26 @@ function clearSheetsHighlight() {
   }
 
   // ── Toast ──────────────────────────────────────────────────────
-  function showScreenshotToast(msg, color = '#333', duration = 2500) {
+  function showScreenshotToast(msg, color = '#333', duration = 2500, onClick = null) {
     let toast = document.getElementById('nhat-screenshot-toast');
     if (!toast) {
       toast = document.createElement('div');
       toast.id = 'nhat-screenshot-toast';
-      toast.style.cssText = `
-        position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-        background: ${color}; color: #fff; padding: 10px 20px; border-radius: 8px;
-        font-size: 13px; font-family: sans-serif; z-index: 2147483647;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.3); pointer-events: none;
-        transition: opacity 0.3s; opacity: 1; white-space: nowrap;
-      `;
       document.body.appendChild(toast);
     }
-    toast.style.background = color;
+    toast.style.cssText = `
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: ${color}; color: #fff; padding: 10px 20px; border-radius: 8px;
+      font-size: 13px; font-family: sans-serif; z-index: 2147483647;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+      transition: opacity 0.3s; opacity: 1; white-space: nowrap;
+      cursor: ${onClick ? 'pointer' : 'default'}; pointer-events: ${onClick ? 'auto' : 'none'};
+    `;
     toast.textContent = msg;
     toast.style.opacity = '1';
+    toast.onclick = onClick || null;
     clearTimeout(toast._timer);
-    toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, duration);
+    toast._timer = setTimeout(() => { toast.style.opacity = '0'; toast.onclick = null; }, duration);
   }
 
   // ── Selection overlay ──────────────────────────────────────────
@@ -4938,11 +4974,24 @@ function clearSheetsHighlight() {
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
 
+      // Lưu ảnh JPEG nhỏ gọn để tích hợp Gemini
+      try {
+        const geminiImg = canvas.toDataURL('image/jpeg', 0.92);
+        chrome.storage.local.set({ geminiPendingImage: geminiImg, geminiPendingTs: Date.now() }).catch(() => {});
+      } catch(e) {}
+
       canvas.toBlob(async (blob) => {
         if (!blob) { showScreenshotToast('❌ Không tạo được ảnh', '#c62828'); return; }
         try {
           await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-          showScreenshotToast('✅ Đã copy ảnh vào clipboard!', '#2e7d32');
+          // Đọc service đang chọn rồi mới show toast
+          safeStorageGet(['chatAiService'], (cfg) => {
+            const svc = cfg.chatAiService || 'gemini';
+            const svcLabel = { gemini: 'Gemini', chatgpt: 'ChatGPT', copilot: 'Copilot' }[svc] || 'AI';
+            showScreenshotToast(`✅ Đã copy ảnh! Nhấn để hỏi ${svcLabel} 🤖`, '#2e7d32', 5000, () => {
+              chrome.runtime.sendMessage({ action: 'openChatAiWindow', service: svc });
+            });
+          });
         } catch (clipErr) {
           downloadBlob(blob, `screenshot_${Date.now()}.png`);
           showScreenshotToast('📥 Clipboard bị chặn, đã tải file thay thế', '#f57c00');
@@ -4996,4 +5045,357 @@ function clearSheetsHighlight() {
     updateScreenshotIndicatorState();
   };
 })();
+
+// ── Chat AI Integration (Gemini / ChatGPT / Copilot) ────────────────────────
+(function() {
+  if (!isTopFrame) return;
+
+  const host = window.location.hostname;
+  const isGemini  = host.includes('gemini.google.com');
+  const isChatGPT = host.includes('chat.openai.com');
+  const isCopilot = host.includes('copilot.microsoft.com');
+  if (!isGemini && !isChatGPT && !isCopilot) return;
+
+  // Tìm input chat tuỳ từng trang
+  function findChatInput() {
+    if (isGemini) {
+      return document.querySelector('rich-textarea .ql-editor[contenteditable="true"]')
+        || document.querySelector('[data-placeholder][contenteditable="true"]')
+        || document.querySelector('div[role="textbox"]')
+        || document.querySelector('textarea');
+    }
+    if (isChatGPT) {
+      return document.querySelector('#prompt-textarea')
+        || document.querySelector('textarea[placeholder]')
+        || document.querySelector('div[contenteditable="true"]');
+    }
+    if (isCopilot) {
+      return document.querySelector('textarea[aria-label]')
+        || document.querySelector('div[contenteditable="true"]')
+        || document.querySelector('textarea');
+    }
+    return null;
+  }
+
+  function showAiBanner(text) {
+    let el = document.getElementById('ka-ai-banner');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'ka-ai-banner';
+      const style = document.createElement('style');
+      style.textContent = '@keyframes kaFadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}';
+      document.head.appendChild(style);
+      document.body.appendChild(el);
+    }
+    const bgColor = isGemini ? 'linear-gradient(135deg,#1a73e8,#4285f4)'
+                  : isChatGPT ? 'linear-gradient(135deg,#10a37f,#0d8c6c)'
+                  : 'linear-gradient(135deg,#0078d4,#005a9e)';
+    el.style.cssText = `
+      position:fixed!important;bottom:80px!important;right:20px!important;
+      background:${bgColor}!important;
+      color:#fff!important;padding:10px 14px!important;border-radius:10px!important;
+      font-size:12px!important;font-family:sans-serif!important;line-height:1.6!important;
+      z-index:2147483647!important;box-shadow:0 4px 16px rgba(0,0,0,0.25)!important;
+      max-width:240px!important;pointer-events:none!important;
+      opacity:1!important;animation:kaFadeIn 0.3s ease!important;
+    `;
+    el.innerHTML = text;
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.style.opacity = '0'; }, 7000);
+  }
+
+  function tryFocusAndNotify() {
+    // Thử nhiều lần vì trang AI load chậm
+    let attempts = 0;
+    const tryFocus = () => {
+      const input = findChatInput();
+      if (input) {
+        input.click();
+        input.focus();
+        showAiBanner('📸 Ảnh đã copy vào clipboard!<br><b>Nhấn Ctrl+V</b> để dán vào chat');
+      } else if (attempts < 8) {
+        attempts++;
+        setTimeout(tryFocus, 600);
+      } else {
+        showAiBanner('📸 Ảnh đã copy vào clipboard!<br><b>Nhấn Ctrl+V</b> để dán vào chat');
+      }
+    };
+    tryFocus();
+  }
+
+  // Lắng nghe ảnh mới từ screenshot
+  chrome.storage.onChanged.addListener((changes) => {
+    if (changes.geminiPendingTs) setTimeout(tryFocusAndNotify, 600);
+  });
+
+  // Kiểm tra khi trang vừa load (mở cửa sổ mới sau khi chụp)
+  chrome.storage.local.get(['geminiPendingTs'], (r) => {
+    if (!r.geminiPendingTs) return;
+    if (Date.now() - r.geminiPendingTs < 30000) setTimeout(tryFocusAndNotify, 2000);
+  });
+})();
+
+// ── Chat AI Floating Bubble ──────────────────────────────────────────────────
+// Theo đúng pattern của createCopyModeIndicator / createFloatingIndicator
+
+let chatBubbleEl = null;
+let isChatBubbleMinimized = false;
+
+function getChatServiceLabel(service) {
+  const labels = { gemini: '✨ Gemini', chatgpt: '💬 ChatGPT', copilot: '🔷 Copilot' };
+  return labels[service] || '🤖 Chat AI';
+}
+
+function getChatServiceColor(service) {
+  const colors = {
+    gemini: 'linear-gradient(135deg, #1a73e8, #4285f4)',
+    chatgpt: 'linear-gradient(135deg, #10a37f, #0d8c6c)',
+    copilot: 'linear-gradient(135deg, #0078d4, #005a9e)'
+  };
+  return colors[service] || 'linear-gradient(135deg, #1a73e8, #4285f4)';
+}
+
+function createChatBubbleIndicator() {
+  if (!isTopFrame) return;
+
+  // Nếu đã có, chỉ cập nhật trạng thái
+  let indicator = document.getElementById('ka-chat-bubble');
+  if (indicator) {
+    updateChatBubbleAppearance(indicator);
+    return;
+  }
+
+  indicator = document.createElement('div');
+  indicator.id = 'ka-chat-bubble';
+
+  // Khai báo drag vars TRƯỚC khi dùng trong updateChatBubbleAppearance
+  let isDragging = false;
+  let hasMoved = false;
+  let currentX, currentY, initialX, initialY;
+  let xOffset = 0, yOffset = 0;
+
+  // Load vị trí đã lưu từ localStorage
+  try {
+    const savedPosition = localStorage.getItem('ka-chat-bubble-position');
+    if (savedPosition) {
+      const pos = JSON.parse(savedPosition);
+      const maxX = window.innerWidth - 100;
+      const maxY = window.innerHeight - 100;
+      const minX = -window.innerWidth + 100;
+      const minY = -window.innerHeight + 100;
+      xOffset = Math.max(minX, Math.min(maxX, pos.x || 0));
+      yOffset = Math.max(minY, Math.min(maxY, pos.y || 0));
+      if (Math.abs(pos.x) > maxX || Math.abs(pos.y) > maxY) {
+        xOffset = 0; yOffset = 0;
+        localStorage.removeItem('ka-chat-bubble-position');
+      }
+    }
+  } catch (e) {
+    console.log('[Keep Alive] Could not load saved chat bubble position');
+  }
+
+  // Hàm cập nhật giao diện, dùng xOffset/yOffset từ closure
+  function updateAppearance() {
+    const tf = `translate(${xOffset}px, ${yOffset}px)`;
+    const shouldShow = showChatBubble && chatBubbleEnabled;
+
+    if (isChatBubbleMinimized) {
+      indicator.style.cssText = `
+        position: fixed !important;
+        bottom: 160px !important;
+        right: 20px !important;
+        width: 26px !important;
+        height: 26px !important;
+        border-radius: 50% !important;
+        background: rgba(80,80,80,0.5) !important;
+        border: 2px solid rgba(255,255,255,0.6) !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
+        z-index: 2147483647 !important;
+        cursor: pointer !important;
+        display: ${shouldShow ? 'flex' : 'none'} !important;
+        align-items: center !important;
+        justify-content: center !important;
+        font-size: 13px !important;
+        transform: ${tf} !important;
+        user-select: none !important;
+      `;
+      indicator.innerHTML = '🙈';
+      indicator.title = 'Nhấn để mở lại';
+    } else {
+      indicator.style.cssText = `
+        position: fixed !important;
+        bottom: 160px !important;
+        right: 20px !important;
+        background: ${getChatServiceColor(chatAiService)} !important;
+        color: white !important;
+        border-radius: 24px !important;
+        box-shadow: 0 3px 12px rgba(0,0,0,0.35) !important;
+        z-index: 2147483647 !important;
+        font-family: Arial, sans-serif !important;
+        cursor: pointer !important;
+        user-select: none !important;
+        display: ${shouldShow ? 'flex' : 'none'} !important;
+        align-items: center !important;
+        font-size: 12px !important;
+        font-weight: bold !important;
+        overflow: hidden !important;
+        transform: ${tf} !important;
+        min-width: 90px !important;
+        transition: box-shadow 0.2s !important;
+      `;
+      indicator.title = '';
+      indicator.innerHTML = `
+        <span class="ka-chat-label" style="padding: 9px 10px 9px 14px; flex: 1; white-space: nowrap; pointer-events: none;">${getChatServiceLabel(chatAiService)}</span>
+        <span class="ka-chat-eye" title="Ẩn tạm" style="padding: 9px 10px 9px 8px; font-size: 14px; border-left: 1px solid rgba(255,255,255,0.3); flex-shrink: 0; cursor: pointer; pointer-events: auto;">👁️</span>
+      `;
+
+      // Gắn sự kiện nút mắt
+      const eyeBtn = indicator.querySelector('.ka-chat-eye');
+      if (eyeBtn) {
+        eyeBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+        eyeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          isChatBubbleMinimized = true;
+          updateAppearance();
+          try { chrome.runtime.sendMessage({ action: 'minimizeChatAiWindow' }); } catch(err) {}
+        });
+      }
+    }
+  }
+
+  // Áp dụng ngay lần đầu
+  updateAppearance();
+
+  // Set transform nếu có vị trí lưu
+  if (xOffset !== 0 || yOffset !== 0) {
+    indicator.style.transform = `translate(${xOffset}px, ${yOffset}px)`;
+  }
+
+  // Drag: mousedown
+  indicator.addEventListener('mousedown', (e) => {
+    if (e.target.classList.contains('ka-chat-eye')) return;
+    initialX = e.clientX - xOffset;
+    initialY = e.clientY - yOffset;
+    isDragging = true;
+    hasMoved = false;
+  });
+
+  // Drag: mousemove
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    e.preventDefault();
+    currentX = e.clientX - initialX;
+    currentY = e.clientY - initialY;
+    if (Math.abs(currentX - xOffset) > 5 || Math.abs(currentY - yOffset) > 5) {
+      hasMoved = true;
+    }
+    xOffset = currentX;
+    yOffset = currentY;
+    indicator.style.transform = `translate(${xOffset}px, ${yOffset}px)`;
+  });
+
+  // Drag: mouseup – lưu vị trí
+  document.addEventListener('mouseup', () => {
+    if (isDragging) {
+      isDragging = false;
+      try {
+        localStorage.setItem('ka-chat-bubble-position', JSON.stringify({ x: xOffset, y: yOffset }));
+      } catch (e) {
+        console.log('[Keep Alive] Could not save chat bubble position');
+      }
+    }
+  });
+
+  // Click: mở chat hoặc khôi phục từ minimized
+  indicator.addEventListener('click', (e) => {
+    if (hasMoved) { hasMoved = false; return; }
+    if (e.target.classList.contains('ka-chat-eye')) return;
+
+    if (isChatBubbleMinimized) {
+      // Chấm 🙈 → mở lại bubble
+      isChatBubbleMinimized = false;
+      updateAppearance();
+    } else {
+      // Bubble đầy đủ → mở cửa sổ chat
+      try { chrome.runtime.sendMessage({ action: 'openChatAiWindow', service: chatAiService }); } catch(err) {}
+    }
+  });
+
+  // Lưu hàm updateAppearance để public API dùng được
+  indicator._updateAppearance = updateAppearance;
+  chatBubbleEl = indicator;
+
+  const container = document.body || document.documentElement;
+  container.appendChild(indicator);
+
+  console.log('[Keep Alive] Chat Bubble indicator created');
+}
+
+// Cập nhật giao diện bubble (khi không có closure, dùng _updateAppearance đã lưu)
+function updateChatBubbleAppearance(indicator) {
+  if (!indicator) indicator = document.getElementById('ka-chat-bubble');
+  if (!indicator) return;
+  if (typeof indicator._updateAppearance === 'function') {
+    indicator._updateAppearance();
+  }
+}
+
+// Khởi tạo Chat Bubble khi DOM ready (chỉ khi chatBubbleEnabled)
+function initChatBubbleIndicator() {
+  if (!isTopFrame) return;
+  if (!chatBubbleEnabled) return;
+
+  console.log('[Keep Alive] initChatBubbleIndicator called, chatBubbleEnabled:', chatBubbleEnabled);
+
+  const isDOMReady = () => document.body || document.documentElement || document.readyState !== 'loading';
+
+  const doCreate = () => {
+    console.log('[Keep Alive] Creating Chat Bubble indicator...');
+    createChatBubbleIndicator();
+  };
+
+  if (isDOMReady()) {
+    doCreate();
+  } else {
+    document.addEventListener('DOMContentLoaded', doCreate, { once: true });
+  }
+}
+
+// ── Public API (được gọi từ message handler) ──────────────────────────────────
+window.__chatBubbleToggle = function(enabled) {
+  chatBubbleEnabled = enabled;
+  if (enabled) {
+    const existing = document.getElementById('ka-chat-bubble');
+    if (!existing) {
+      initChatBubbleIndicator();
+    } else {
+      updateChatBubbleAppearance(existing);
+    }
+  } else {
+    // Tắt: ẩn bubble (không xoá hẳn để giữ state drag)
+    if (chatBubbleEl) {
+      chatBubbleEl.style.display = 'none';
+    } else {
+      const el = document.getElementById('ka-chat-bubble');
+      if (el) el.style.display = 'none';
+    }
+  }
+};
+
+window.__chatBubbleSetVisible = function(show) {
+  showChatBubble = show;
+  const el = chatBubbleEl || document.getElementById('ka-chat-bubble');
+  if (el && typeof el._updateAppearance === 'function') {
+    el._updateAppearance();
+  }
+};
+
+window.__chatBubbleSetService = function(service) {
+  chatAiService = service;
+  const el = chatBubbleEl || document.getElementById('ka-chat-bubble');
+  if (el && typeof el._updateAppearance === 'function') {
+    el._updateAppearance();
+  }
+};
+
 

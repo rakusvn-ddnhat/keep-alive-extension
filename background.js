@@ -337,6 +337,92 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
       });
       return true;
+    } else if (message.action === 'openGeminiWindow') {
+      // Chỉ tái dùng nếu đã có popup window Gemini, còn tab thường thì tạo popup mới
+      chrome.windows.getAll({ populate: true }, (windows) => {
+        let geminiPopupWin = null;
+        for (const win of windows) {
+          if (win.type === 'popup') {
+            const hasGemini = (win.tabs || []).some(t => t.url && t.url.includes('gemini.google.com'));
+            if (hasGemini) { geminiPopupWin = win; break; }
+          }
+        }
+        if (geminiPopupWin) {
+          chrome.windows.update(geminiPopupWin.id, { focused: true });
+          sendResponse({ found: true, windowId: geminiPopupWin.id });
+        } else {
+          // Tạo popup window mới ghim bên phải màn hình
+          chrome.windows.getCurrent((currentWin) => {
+            const winWidth = 490;
+            const winHeight = currentWin.height || 900;
+            const left = Math.max(0, (currentWin.left + currentWin.width) - winWidth);
+            chrome.windows.create({
+              url: 'https://gemini.google.com',
+              type: 'popup',
+              width: winWidth,
+              height: winHeight,
+              left: left,
+              top: currentWin.top || 0
+            }, (win) => {
+              sendResponse({ found: false, windowId: win.id });
+            });
+          });
+        }
+      });
+      return true;
+    } else if (message.action === 'openChatAiWindow') {
+      const AI_URLS = {
+        gemini: 'https://gemini.google.com',
+        chatgpt: 'https://chat.openai.com/',
+        copilot: 'https://copilot.microsoft.com/'
+      };
+      const service = message.service || 'gemini';
+      const targetUrl = AI_URLS[service] || AI_URLS.gemini;
+
+      chrome.windows.getAll({ populate: true }, (windows) => {
+        let existingWin = null;
+        for (const win of windows) {
+          if (win.type === 'popup') {
+            const hasService = (win.tabs || []).some(t => t.url && t.url.includes(new URL(targetUrl).hostname));
+            if (hasService) { existingWin = win; break; }
+          }
+        }
+        if (existingWin) {
+          chrome.windows.update(existingWin.id, { focused: true, state: 'normal' });
+          sendResponse({ found: true, windowId: existingWin.id });
+        } else {
+          chrome.windows.getCurrent((currentWin) => {
+            const winWidth = 490;
+            const winHeight = currentWin.height || 900;
+            const left = Math.max(0, (currentWin.left + currentWin.width) - winWidth);
+            chrome.windows.create({
+              url: targetUrl,
+              type: 'popup',
+              width: winWidth,
+              height: winHeight,
+              left: left,
+              top: currentWin.top || 0
+            }, (win) => {
+              sendResponse({ found: false, windowId: win.id });
+            });
+          });
+        }
+      });
+      return true;
+    } else if (message.action === 'minimizeChatAiWindow') {
+      const AI_HOSTNAMES = ['gemini.google.com', 'chat.openai.com', 'copilot.microsoft.com'];
+      chrome.windows.getAll({ populate: true }, (windows) => {
+        for (const win of windows) {
+          if (win.type === 'popup') {
+            const isAiWin = (win.tabs || []).some(t =>
+              t.url && AI_HOSTNAMES.some(h => t.url.includes(h))
+            );
+            if (isAiWin) chrome.windows.update(win.id, { state: 'minimized' });
+          }
+        }
+        sendResponse({ success: true });
+      });
+      return true;
     }
   } catch (error) {
     console.error('[Background] Error handling message:', error);
