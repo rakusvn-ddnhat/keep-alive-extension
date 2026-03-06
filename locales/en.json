@@ -80,5 +80,10 @@
   "downloading": "Downloading...",
   "downloadComplete": "Download complete!",
   "updateSteps": "Update steps:",
-  "copyright": "© Doan Duy Nhat"
+  "copyright": "© Đoàn Duy Nhất",
+  "screenshotCapture": "📸 Screenshot Capture",
+  "screenshotHelp": "💡 Drag to select a region → auto copy image to clipboard for AI",
+  "screenshotScale": "Scale:",
+  "screenshotSaveFile": "Auto save PNG file",
+  "startScreenshot": "📸 Capture Selection"
 }

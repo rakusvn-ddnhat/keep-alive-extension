@@ -355,9 +355,15 @@
       background: #2d2d2d;
       border-radius: 4px;
       cursor: pointer;
-      transition: background 0.2s;
+      transition: all 0.2s ease;
+      border: 2px solid transparent;
     }
-    .history-item:hover { background: #383838; }
+    .history-item:hover {
+      background: #383838;
+      border-color: #0e639c;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
     .history-item .method {
       font-size: 11px;
       font-weight: bold;
@@ -432,10 +438,11 @@
   <div class="header">
     <h1>🚀 API Tester</h1>
     <div class="actions">
-      <button class="btn btn-primary" id="loadRecordsBtn">📂 Load Records</button>
-      <button class="btn btn-secondary" id="importCurlBtn">📋 Import cURL</button>
-      <button class="btn btn-secondary" id="clearBtn">🗑️ Clear</button>
-      <button class="btn btn-secondary" id="historyBtn">📜 History</button>
+      <button class="btn btn-primary" id="loadRecordsBtn" title="Load requests từ Record Requests (đã ghi lại trong extension)">📂 Load Records</button>
+      <button class="btn btn-secondary" id="importCurlBtn" title="Import một cURL command duy nhất">📋 Import cURL</button>
+      <button class="btn btn-secondary" id="importCurlListBtn" style="background: #9c27b0; color: white;" title="Import file JSON chứa nhiều requests (từ Export JSON)">📁 Import List</button>
+      <button class="btn btn-secondary" id="clearBtn" title="Xóa form hiện tại">🗑️ Clear</button>
+      <button class="btn btn-secondary" id="historyBtn" title="Xem lịch sử requests đã gửi trong phiên này">📜 History</button>
     </div>
   </div>
   
@@ -584,6 +591,10 @@ curl 'https://api.example.com/users' \
   <div class="import-modal" id="historyModal">
     <div class="import-modal-content" style="max-height: 80vh; overflow: auto;">
       <h3>📜 Request History</h3>
+      <p style="color: #888; font-size: 11px; margin-bottom: 10px; padding: 6px 8px; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px;">
+        💡 <strong>Lưu ý:</strong> Đây là lịch sử requests đã gửi <strong>trong phiên này</strong> (lưu trong localStorage của trang). <br>
+        Để xem requests đã record từ extension, dùng nút <strong>📂 Load Records</strong>.
+      </p>
       <div id="historyList"></div>
       <div class="import-actions" style="margin-top: 15px;">
         <button class="btn btn-danger" id="clearHistory">Clear All</button>
@@ -592,11 +603,43 @@ curl 'https://api.example.com/users' \
     </div>
   </div>
 
+  <!-- Import cURL List Modal -->
+  <div class="import-modal" id="importListModal">
+    <div class="import-modal-content" style="max-height: 80vh; overflow: auto; width: 750px;">
+      <h3>📁 Import cURL List (JSON)</h3>
+      <p style="color: #888; font-size: 11px; margin-bottom: 10px; padding: 6px 8px; background: #f3e5f5; border-left: 3px solid #9c27b0; border-radius: 4px; line-height: 1.5;">
+        💡 <strong>Import file JSON</strong> được export từ <strong>"📋 JSON"</strong> button trong popup. <br>
+        <strong>Khác với Load Records:</strong> Đây là file tĩnh bạn đã export ra, có thể chỉnh sửa và import lại.
+      </p>
+      <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
+        <input type="file" id="curlListFileInput" accept=".json" style="display: none;">
+        <button class="btn btn-primary" id="selectCurlListFile">📂 Chọn file JSON</button>
+        <span id="curlListFileName" style="color: #888; font-size: 12px;"></span>
+        <span id="curlListCount" style="color: #4ec9b0; font-size: 12px; margin-left: auto;"></span>
+      </div>
+      <div id="curlListPreview" style="max-height: 350px; overflow-y: auto; display: none;">
+        <div id="curlListItems"></div>
+      </div>
+      <div class="import-actions" style="margin-top: 15px; display: flex; gap: 10px;">
+        <button class="btn btn-danger" id="clearAllCurlList" style="display: none;">🗑️ Xóa tất cả</button>
+        <span style="flex: 1;"></span>
+        <button class="btn btn-success" id="importAllCurlList" style="display: none;">✅ Import All vào History</button>
+        <button class="btn btn-secondary" id="closeImportList">Đóng</button>
+      </div>
+    </div>
+  </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Load Records Modal -->
   <div class="import-modal" id="recordsModal">
     <div class="import-modal-content" style="max-height: 80vh; overflow: auto; width: 800px;">
       <h3>📂 Recorded Requests</h3>
-      <p style="color: #888; font-size: 12px; margin-bottom: 15px;">Chọn một request từ danh sách đã record để load vào API Tester</p>
+      <p style="color: #888; font-size: 11px; margin-bottom: 10px; padding: 6px 8px; background: #e8f5e9; border-left: 3px solid #4CAF50; border-radius: 4px;">
+        💡 <strong>Đây là requests đã record từ extension</strong> (lưu trong chrome.storage). <br>
+        Bật <strong>"Record Requests"</strong> trong popup extension để ghi lại requests từ DevTools.
+      </p>
       <div style="margin-bottom: 15px;">
         <input type="text" id="recordsSearchInput" class="url-input" placeholder="🔍 Tìm kiếm theo URL, method..." style="width: 100%;">
       </div>

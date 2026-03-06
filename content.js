@@ -27,6 +27,7 @@ let highlightMode = 'row'; // row, column, both
 let highlightColor = '#e10e0e';
 let sheetsHighlightActive = false;
 let currentHighlightedCells = [];
+let showCrosshairIndicator = true;
 
 // Chỉ chạy trong top frame, không chạy trong iframe
 const isTopFrame = (window === window.top);
@@ -91,7 +92,7 @@ async function loadLanguage(lang) {
 }
 
 // Load saved language and showIndicator state
-safeStorageGet(['language', 'showIndicator', 'copyModeEnabled', 'showCopyIndicator', 'translateModeEnabled', 'showTranslateIndicator', 'translateOnHover', 'translateTargetLang', 'sheetsHighlightEnabled', 'highlightMode', 'highlightColor'], (result) => {
+safeStorageGet(['language', 'showIndicator', 'copyModeEnabled', 'showCopyIndicator', 'translateModeEnabled', 'showTranslateIndicator', 'translateOnHover', 'translateTargetLang', 'sheetsHighlightEnabled', 'highlightMode', 'highlightColor', 'showCrosshairIndicator', 'apiTesterEnabled', 'showApiTesterIndicator'], (result) => {
   const savedLang = result.language || 'vi';
   loadLanguage(savedLang);
   
@@ -114,12 +115,14 @@ safeStorageGet(['language', 'showIndicator', 'copyModeEnabled', 'showCopyIndicat
   sheetsHighlightEnabled = result.sheetsHighlightEnabled || false;
   highlightMode = result.highlightMode || 'row';
   highlightColor = result.highlightColor || '#fff3cd';
+  showCrosshairIndicator = result.showCrosshairIndicator !== false;
   
   // LUÔN tạo indicator ở top frame (để người dùng có thể click bật/tắt)
   // Sau đó mới ẩn/hiện dựa trên showCopyIndicator
   if (isTopFrame) {
-    initCopyModeIndicator();
-    initTranslateModeIndicator();
+    try { initCopyModeIndicator(); } catch(e) { console.error('[Keep Alive] initCopyModeIndicator error:', e); }
+    try { initTranslateModeIndicator(); } catch(e) { console.error('[Keep Alive] initTranslateModeIndicator error:', e); }
+    try { initCrosshairIndicator(); } catch(e) { console.error('[Keep Alive] initCrosshairIndicator error:', e); }
   }
   
   // LUÔN thêm CSS highlight vào TẤT CẢ FRAMES (kể cả frame con)
@@ -172,6 +175,28 @@ safeStorageGet(['language', 'showIndicator', 'copyModeEnabled', 'showCopyIndicat
   // Nếu Web Crosshair đang bật - hoạt động trên mọi trang web
   if (sheetsHighlightEnabled) {
     enableSheetsHighlight();
+  }
+  
+  // Nếu API Tester đang bật - chỉ top frame
+  const apiTesterEnabled = result.apiTesterEnabled || false;
+  const showApiTesterIndicatorFlag = result.showApiTesterIndicator !== false;
+  if (apiTesterEnabled && isTopFrame) {
+    const isDOMReady = () => {
+      return document.body || document.documentElement || document.readyState !== 'loading';
+    };
+    
+    if (isDOMReady()) {
+      injectApiTesterPanel(showApiTesterIndicatorFlag);
+    } else if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => injectApiTesterPanel(showApiTesterIndicatorFlag), { once: true });
+    } else {
+      const waitForDOM = setInterval(() => {
+        if (isDOMReady()) {
+          clearInterval(waitForDOM);
+          injectApiTesterPanel(showApiTesterIndicatorFlag);
+        }
+      }, 50);
+    }
   }
   
   // Ẩn/hiện indicator dựa trên setting
@@ -257,6 +282,16 @@ try {
           enableSheetsHighlight();
         } else {
           disableSheetsHighlight();
+        }
+        updateCrosshairIndicatorState();
+      }
+      
+      if (namespace === 'local' && changes.showCrosshairIndicator) {
+        showCrosshairIndicator = changes.showCrosshairIndicator.newValue;
+        console.log('[Keep Alive] showCrosshairIndicator changed to:', showCrosshairIndicator);
+        const indicator = document.getElementById('ka-crosshair-indicator');
+        if (indicator) {
+          indicator.style.display = showCrosshairIndicator ? 'block' : 'none';
         }
       }
       
@@ -792,6 +827,11 @@ try {
 
 // Lắng nghe message từ popup để check DevTools state
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'ping') {
+    sendResponse({ alive: true });
+    return true;
+  }
+
   if (request.action === 'checkDevTools') {
     // Trả về trạng thái hiện tại của DevTools
     sendResponse({ isOpen: isDevToolsOpen });
@@ -839,7 +879,1829 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ success: true });
     return true;
   }
+  
+  if (request.action === 'injectApiTester') {
+    // Inject API Tester panel vào trang (bypass CORS)
+    console.log('[Keep Alive] Received injectApiTester, isTopFrame:', isTopFrame);
+    
+    if (isTopFrame) {
+      try {
+        injectApiTesterPanel();
+        sendResponse({ success: true, message: 'Injected successfully' });
+      } catch (e) {
+        console.error('[Keep Alive] Inject error:', e);
+        sendResponse({ success: false, error: e.message });
+      }
+    } else {
+      sendResponse({ success: false, error: 'Only inject in top frame' });
+    }
+    return true;
+  }
+  
+  if (request.action === 'toggleApiTester') {
+    console.log('[Keep Alive] toggleApiTester:', request.enabled, 'isTopFrame:', isTopFrame);
+    
+    if (isTopFrame) {
+      try {
+        if (request.enabled) {
+          injectApiTesterPanel(request.showIndicator);
+        } else {
+          removeApiTesterPanel();
+        }
+        sendResponse({ success: true });
+      } catch (e) {
+        console.error('[Keep Alive] Toggle API Tester error:', e);
+        sendResponse({ success: false, error: e.message });
+      }
+    } else {
+      sendResponse({ success: false, error: 'Only toggle in top frame' });
+    }
+    return true;
+  }
+  
+  if (request.action === 'updateApiTesterIndicator') {
+    if (isTopFrame && apiTesterIndicator) {
+      apiTesterIndicator.style.display = request.show ? 'block' : 'none';
+    }
+    sendResponse({ success: true });
+    return true;
+  }
+
+  if (request.action === 'startScreenshotSelection') {
+    if (!isTopFrame) {
+      sendResponse({ started: false, error: 'Not top frame' });
+      return true;
+    }
+    try {
+      if (typeof window.__screenshotStartCallback === 'function') {
+        window.__screenshotStartCallback(request.scale || 2, request.saveFile || false);
+        sendResponse({ started: true });
+      } else {
+        sendResponse({ started: false, error: 'Screenshot module not loaded' });
+      }
+    } catch (e) {
+      sendResponse({ started: false, error: e.message });
+    }
+    return true;
+  }
+
+  if (request.action === 'toggleScreenshotIndicator') {
+    if (isTopFrame && typeof window.__screenshotToggleIndicator === 'function') {
+      window.__screenshotToggleIndicator(request.show);
+    }
+    sendResponse({ success: true });
+    return true;
+  }
 });
+
+// ==================== INJECTED API TESTER ====================
+
+let apiTesterPanel = null;
+let apiTesterIndicator = null;
+let apiTesterInjected = false;
+
+function injectApiTesterPanel(showIndicator = true) {
+  // Nếu đã inject rồi, toggle hiển thị panel
+  if (apiTesterInjected) {
+    if (apiTesterPanel) apiTesterPanel.style.display = 'flex';
+    if (apiTesterIndicator && showIndicator) apiTesterIndicator.style.display = 'block';
+    return;
+  }
+  
+  // Chờ DOM ready
+  function doInject() {
+    // Kiểm tra xem có phải frameset không
+    const isFrameset = document.querySelector('frameset') !== null;
+    
+    let container = document.body;
+    
+    // Nếu là frameset page, cần tạo overlay div đặc biệt
+    if (isFrameset || !document.body) {
+      console.log('[Keep Alive] Detected frameset page, creating overlay...');
+      
+      // Tạo container overlay cho frameset
+      let overlay = document.getElementById('nhat-api-overlay');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'nhat-api-overlay';
+        overlay.style.cssText = `
+          position: fixed !important;
+          top: 0 !important;
+          left: 0 !important;
+          width: 100vw !important;
+          height: 100vh !important;
+          pointer-events: none !important;
+          z-index: 2147483647 !important;
+        `;
+        (document.documentElement || document.body).appendChild(overlay);
+      }
+      container = overlay;
+    }
+    
+    if (!container) {
+      console.log('[Keep Alive] Waiting for DOM...');
+      setTimeout(doInject, 100);
+      return;
+    }
+    
+    console.log('[Keep Alive] Injecting API Tester into:', container.tagName || container.id);
+    
+    // Thêm style
+    addApiTesterStyles();
+    
+    // Tạo indicator (nút toggle ẩn/hiện) - cho phép click
+    createApiTesterIndicator(container);
+    
+    // Tạo panel container
+    apiTesterPanel = document.createElement('div');
+    apiTesterPanel.id = 'nhat-api-tester-panel';
+    apiTesterPanel.innerHTML = getApiTesterHTML();
+    apiTesterPanel.style.pointerEvents = 'auto'; // Cho phép interact
+    
+    // Append vào container
+    container.appendChild(apiTesterPanel);
+    
+    // Setup event listeners
+    setupApiTesterEvents();
+    
+    // Đánh dấu đã inject
+    apiTesterInjected = true;
+    
+    // Hiển thị thông báo thành công với tên domain
+    const domain = window.location.hostname;
+    showApiTesterNotification(`✅ API Tester đã inject vào: ${domain}`);
+    
+    console.log('[Keep Alive] API Tester panel injected successfully on:', domain);
+  }
+  
+  doInject();
+}
+
+// Remove API Tester panel khi tắt toggle
+function removeApiTesterPanel() {
+  console.log('[Keep Alive] Removing API Tester panel...');
+  
+  // Xóa panel
+  if (apiTesterPanel) {
+    apiTesterPanel.remove();
+    apiTesterPanel = null;
+  } else {
+    const panel = document.getElementById('nhat-api-tester-panel');
+    if (panel) panel.remove();
+  }
+  
+  // Xóa indicator
+  if (apiTesterIndicator) {
+    apiTesterIndicator.remove();
+    apiTesterIndicator = null;
+  } else {
+    const indicator = document.getElementById('nhat-api-tester-indicator');
+    if (indicator) indicator.remove();
+  }
+  
+  // Xóa overlay nếu có (cho frameset page)
+  const overlay = document.getElementById('nhat-api-overlay');
+  if (overlay) overlay.remove();
+  
+  // Xóa style
+  const style = document.getElementById('nhat-api-tester-styles');
+  if (style) style.remove();
+  
+  // Reset trạng thái
+  apiTesterInjected = false;
+  
+  console.log('[Keep Alive] API Tester removed');
+}
+
+function createApiTesterIndicator(container) {
+  // Nếu indicator đã tồn tại thì bỏ qua
+  if (document.getElementById('nhat-api-tester-indicator')) return;
+  
+  const domain = window.location.hostname;
+  const shortDomain = domain.length > 15 ? domain.substring(0, 12) + '...' : domain;
+  
+  apiTesterIndicator = document.createElement('div');
+  apiTesterIndicator.id = 'nhat-api-tester-indicator';
+  apiTesterIndicator.style.pointerEvents = 'auto'; // Cho phép click trên overlay
+  apiTesterIndicator.innerHTML = `
+    <span class="nhat-api-ind-icon">🚀</span>
+    <span class="nhat-api-ind-text">API</span>
+    <span class="nhat-api-ind-domain">${shortDomain}</span>
+  `;
+  apiTesterIndicator.title = `API Tester trên ${domain} - Click để ẩn/hiện`;
+  
+  // Click để toggle panel
+  apiTesterIndicator.addEventListener('click', toggleApiTesterPanel);
+  
+  container.appendChild(apiTesterIndicator);
+  console.log('[Keep Alive] API Tester indicator created');
+}
+
+function toggleApiTesterPanel() {
+  if (!apiTesterPanel) return;
+  
+  const isHidden = apiTesterPanel.classList.contains('nhat-hidden');
+  apiTesterPanel.classList.toggle('nhat-hidden', !isHidden);
+  
+  // Update indicator style - xanh khi panel hiện, xám khi panel ẩn
+  if (apiTesterIndicator) {
+    apiTesterIndicator.classList.toggle('inactive', !isHidden);
+  }
+  console.log('[Keep Alive] API Tester panel toggled, visible:', isHidden);
+}
+
+function showApiTesterNotification(message) {
+  // Lấy overlay nếu có, không thì dùng body
+  let container = document.getElementById('nhat-api-overlay') || document.body || document.documentElement;
+  if (!container) return;
+  
+  // Xóa notification cũ nếu có
+  const existing = document.getElementById('nhat-api-notification');
+  if (existing) existing.remove();
+  
+  const notification = document.createElement('div');
+  notification.id = 'nhat-api-notification';
+  notification.style.pointerEvents = 'auto';
+  notification.innerHTML = `
+    <span>${message}</span>
+    <div style="font-size: 10px; margin-top: 4px; opacity: 0.8;">
+      Click nút 🚀 API ở góc màn hình để ẩn/hiện
+    </div>
+  `;
+  
+  container.appendChild(notification);
+  
+  // Auto remove sau 4 giây
+  setTimeout(() => {
+    notification.style.opacity = '0';
+    setTimeout(() => notification.remove(), 300);
+  }, 4000);
+}
+
+function getApiTesterHTML() {
+  return `
+    <div class="nhat-api-header">
+      <span class="nhat-api-title">🚀 API Tester (Injected - No CORS)</span>
+      <div class="nhat-api-header-btns">
+        <button class="nhat-api-btn nhat-api-btn-secondary" id="nhat-api-load-records" title="Load từ Record Requests">📂 Records</button>
+        <button class="nhat-api-btn nhat-api-btn-secondary" id="nhat-api-import-curl" title="Import cURL">📥 cURL</button>
+        <button class="nhat-api-btn nhat-api-btn-secondary" id="nhat-api-import-list" title="Import JSON list">📁 List</button>
+        <button class="nhat-api-btn nhat-api-btn-secondary" id="nhat-api-history" title="Lịch sử">📜</button>
+        <button class="nhat-api-btn nhat-api-btn-secondary" id="nhat-api-clear" title="Xóa">🗑️</button>
+        <button class="nhat-api-btn nhat-api-btn-maximize" id="nhat-api-maximize" title="Phóng to">🗖</button>
+        <button class="nhat-api-btn nhat-api-btn-minimize" id="nhat-api-minimize" title="Thu nhỏ">➖</button>
+        <button class="nhat-api-btn nhat-api-btn-close" id="nhat-api-close" title="Đóng">✕</button>
+      </div>
+    </div>
+    <div class="nhat-api-body" id="nhat-api-body">
+      <!-- Request Bar -->
+      <div class="nhat-api-request-bar">
+        <select id="nhat-api-method" class="nhat-api-method">
+          <option value="GET">GET</option>
+          <option value="POST">POST</option>
+          <option value="PUT">PUT</option>
+          <option value="PATCH">PATCH</option>
+          <option value="DELETE">DELETE</option>
+          <option value="HEAD">HEAD</option>
+          <option value="OPTIONS">OPTIONS</option>
+        </select>
+        <input type="text" id="nhat-api-url" class="nhat-api-url" placeholder="Enter URL (hoặc path tương đối: /api/users)">
+        <button id="nhat-api-send" class="nhat-api-btn nhat-api-btn-primary">Send</button>
+      </div>
+      
+      <!-- Request Options -->
+      <div class="nhat-api-section">
+        <div class="nhat-api-tabs">
+          <button class="nhat-api-tab active" data-tab="headers">Headers</button>
+          <button class="nhat-api-tab" data-tab="body">Body</button>
+          <button class="nhat-api-tab" data-tab="auth">Auth</button>
+        </div>
+        
+        <div class="nhat-api-tab-content" id="nhat-api-headers-tab">
+          <div class="nhat-api-kv-editor" id="nhat-api-headers-editor">
+            <div class="nhat-api-kv-row">
+              <input type="checkbox" class="nhat-api-kv-check" checked>
+              <input type="text" class="nhat-api-kv-key" placeholder="Header name">
+              <input type="text" class="nhat-api-kv-value" placeholder="Value">
+              <button class="nhat-api-kv-delete">✕</button>
+            </div>
+          </div>
+          <button class="nhat-api-add-row" id="nhat-api-add-header">+ Add Header</button>
+        </div>
+        
+        <div class="nhat-api-tab-content" id="nhat-api-body-tab" style="display:none;">
+          <div class="nhat-api-body-types">
+            <label><input type="radio" name="nhat-body-type" value="none" checked> None</label>
+            <label><input type="radio" name="nhat-body-type" value="json"> JSON</label>
+            <label><input type="radio" name="nhat-body-type" value="form"> Form</label>
+            <label><input type="radio" name="nhat-body-type" value="raw"> Raw</label>
+          </div>
+          <textarea id="nhat-api-body-editor" class="nhat-api-body-editor" placeholder='{"key": "value"}'></textarea>
+        </div>
+        
+        <div class="nhat-api-tab-content" id="nhat-api-auth-tab" style="display:none;">
+          <select id="nhat-api-auth-type" class="nhat-api-auth-select">
+            <option value="none">No Auth</option>
+            <option value="bearer">Bearer Token</option>
+            <option value="basic">Basic Auth</option>
+            <option value="apikey">API Key</option>
+          </select>
+          <div id="nhat-api-auth-fields"></div>
+        </div>
+      </div>
+      
+      <!-- Response -->
+      <div class="nhat-api-section nhat-api-response-section">
+        <div class="nhat-api-response-header">
+          <span>Response</span>
+          <span id="nhat-api-status" class="nhat-api-status"></span>
+          <span id="nhat-api-time" class="nhat-api-time"></span>
+          <span id="nhat-api-size" class="nhat-api-size"></span>
+        </div>
+        <div class="nhat-api-response-tabs">
+          <button class="nhat-api-resp-tab active" data-response-tab="body">Body</button>
+          <button class="nhat-api-resp-tab" data-response-tab="headers">Headers</button>
+          <button class="nhat-api-resp-tab" data-response-tab="cookies">Cookies</button>
+        </div>
+        <div class="nhat-api-view-modes" id="nhat-api-view-modes">
+          <button class="nhat-api-view-btn active" data-view="pretty">Pretty</button>
+          <button class="nhat-api-view-btn" data-view="raw">Raw</button>
+          <button class="nhat-api-view-btn" data-view="preview">Preview</button>
+        </div>
+        <div id="nhat-api-response-body" class="nhat-api-response-body">
+          <div class="nhat-api-empty-state">Click Send để gửi request</div>
+        </div>
+        <div id="nhat-api-response-headers" class="nhat-api-response-headers" style="display:none;"></div>
+        <div id="nhat-api-response-cookies" class="nhat-api-response-cookies" style="display:none;"></div>
+      </div>
+    </div>
+    
+    <!-- Import cURL Modal -->
+    <div class="nhat-api-modal" id="nhat-api-curl-modal" style="display:none;">
+      <div class="nhat-api-modal-content">
+        <div class="nhat-api-modal-header">
+          <span>📥 Import cURL</span>
+          <button class="nhat-api-modal-close" id="nhat-api-curl-cancel">✕</button>
+        </div>
+        <textarea id="nhat-api-curl-input" class="nhat-api-curl-input" placeholder="Paste cURL command here..."></textarea>
+        <div class="nhat-api-modal-actions">
+          <button class="nhat-api-btn nhat-api-btn-secondary" id="nhat-api-curl-cancel2">Hủy</button>
+          <button class="nhat-api-btn nhat-api-btn-primary" id="nhat-api-curl-import">Import</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Records Modal -->
+    <div class="nhat-api-modal" id="nhat-api-records-modal" style="display:none;">
+      <div class="nhat-api-modal-content nhat-api-modal-large">
+        <div class="nhat-api-modal-header">
+          <span>📂 Load Records</span>
+          <button class="nhat-api-modal-close" id="nhat-api-records-close">✕</button>
+        </div>
+        <div id="nhat-api-records-list" class="nhat-api-records-list">
+          <div class="nhat-api-empty-state">Đang tải...</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- History Modal -->
+    <div class="nhat-api-modal" id="nhat-api-history-modal" style="display:none;">
+      <div class="nhat-api-modal-content nhat-api-modal-large">
+        <div class="nhat-api-modal-header">
+          <span>📜 History</span>
+          <button class="nhat-api-btn nhat-api-btn-secondary" id="nhat-api-history-clear">🗑️ Clear</button>
+          <button class="nhat-api-modal-close" id="nhat-api-history-close">✕</button>
+        </div>
+        <div id="nhat-api-history-list" class="nhat-api-history-list">
+          <div class="nhat-api-empty-state">Chưa có lịch sử</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Import List Modal -->
+    <div class="nhat-api-modal" id="nhat-api-list-modal" style="display:none;">
+      <div class="nhat-api-modal-content nhat-api-modal-large">
+        <div class="nhat-api-modal-header">
+          <span>📁 Import List</span>
+          <button class="nhat-api-modal-close" id="nhat-api-list-close">✕</button>
+        </div>
+        <input type="file" id="nhat-api-list-file" accept=".json" style="display:none;">
+        <button class="nhat-api-btn nhat-api-btn-primary" id="nhat-api-list-select">📁 Chọn file JSON</button>
+        <div id="nhat-api-list-items" class="nhat-api-records-list" style="margin-top:10px;"></div>
+      </div>
+    </div>
+  `;
+}
+
+function addApiTesterStyles() {
+  if (document.getElementById('nhat-api-tester-styles')) return;
+  
+  const style = document.createElement('style');
+  style.id = 'nhat-api-tester-styles';
+  style.textContent = `
+    /* Indicator (nút toggle) */
+    #nhat-api-tester-indicator {
+      position: fixed !important;
+      bottom: 80px !important;
+      right: 15px !important;
+      background: linear-gradient(135deg, #0e639c, #1177bb) !important;
+      color: white !important;
+      padding: 8px 12px !important;
+      border-radius: 20px !important;
+      cursor: pointer !important;
+      z-index: 2147483647 !important;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+      font-size: 12px !important;
+      font-weight: bold !important;
+      display: flex !important;
+      align-items: center !important;
+      gap: 6px !important;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+      transition: all 0.2s ease !important;
+      user-select: none !important;
+      border: 2px solid white !important;
+    }
+    
+    #nhat-api-tester-indicator:hover {
+      transform: scale(1.05) !important;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.6) !important;
+    }
+    
+    #nhat-api-tester-indicator.inactive {
+      background: linear-gradient(135deg, #555, #666) !important;
+      opacity: 0.7 !important;
+    }
+    
+    .nhat-api-ind-icon {
+      font-size: 14px !important;
+    }
+    
+    .nhat-api-ind-domain {
+      font-size: 10px !important;
+      opacity: 0.8 !important;
+      background: rgba(255,255,255,0.2) !important;
+      padding: 2px 6px !important;
+      border-radius: 10px !important;
+    }
+    
+    /* Notification */
+    #nhat-api-notification {
+      position: fixed !important;
+      top: 20px !important;
+      left: 50% !important;
+      transform: translateX(-50%) !important;
+      background: linear-gradient(135deg, #388a34, #45a049) !important;
+      color: white !important;
+      padding: 12px 20px !important;
+      border-radius: 8px !important;
+      z-index: 2147483647 !important;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+      font-size: 14px !important;
+      font-weight: bold !important;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5) !important;
+      text-align: center !important;
+      transition: opacity 0.3s ease !important;
+      border: 2px solid white !important;
+    }
+    
+    /* Panel chính */
+    #nhat-api-tester-panel {
+      position: fixed !important;
+      top: 10px !important;
+      right: 10px !important;
+      width: 550px !important;
+      max-width: calc(100vw - 20px) !important;
+      max-height: calc(100vh - 20px) !important;
+      background: #1e1e1e !important;
+      border: 2px solid #0e639c !important;
+      border-radius: 8px !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important;
+      z-index: 2147483647 !important;
+      flex-direction: column !important;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+      font-size: 13px !important;
+      color: #d4d4d4 !important;
+      resize: both !important;
+      overflow: hidden !important;
+      display: flex !important;
+      transition: all 0.25s cubic-bezier(0.4,0,0.2,1) !important;
+    }
+
+    #nhat-api-tester-panel.maximized {
+      top: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      bottom: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      max-width: 100vw !important;
+      max-height: 100vh !important;
+      border-radius: 0 !important;
+      resize: none !important;
+      box-shadow: 0 0 0 rgba(0,0,0,0) !important;
+    }
+
+    .nhat-api-btn-maximize {
+      background: #0e639c;
+      color: white;
+      padding: 4px 8px;
+    }
+    .nhat-api-btn-maximize:hover {
+      background: #1177bb;
+    }
+    
+    #nhat-api-tester-panel.nhat-hidden {
+      display: none !important;
+    }
+    
+    .nhat-api-header {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      padding: 10px 12px !important;
+      background: #252526 !important;
+      border-bottom: 1px solid #444 !important;
+      cursor: move !important;
+    }
+    
+    .nhat-api-title {
+      font-weight: bold !important;
+      color: #569cd6 !important;
+      font-size: 14px;
+    }
+    
+    .nhat-api-header-btns {
+      display: flex;
+      gap: 6px;
+    }
+    
+    .nhat-api-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    
+    .nhat-api-btn {
+      padding: 6px 12px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+    
+    .nhat-api-btn-primary { background: #0e639c; color: white; }
+    .nhat-api-btn-primary:hover { background: #1177bb; }
+    .nhat-api-btn-secondary { background: #3c3c3c; color: #d4d4d4; border: 1px solid #555; }
+    .nhat-api-btn-secondary:hover { background: #4a4a4a; }
+    .nhat-api-btn-close { background: #c42b1c; color: white; padding: 4px 8px; }
+    .nhat-api-btn-close:hover { background: #e03e2f; }
+    .nhat-api-btn-minimize { background: #555; color: white; padding: 4px 8px; }
+    .nhat-api-btn-minimize:hover { background: #666; }
+    
+    .nhat-api-request-bar {
+      display: flex;
+      gap: 8px;
+    }
+    
+    .nhat-api-method {
+      width: 100px;
+      padding: 8px;
+      background: #3c3c3c;
+      color: #d4d4d4;
+      border: 1px solid #555;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+    
+    .nhat-api-url {
+      flex: 1;
+      padding: 8px 12px;
+      background: #2d2d2d;
+      color: #d4d4d4;
+      border: 1px solid #555;
+      border-radius: 4px;
+    }
+    
+    .nhat-api-url:focus, .nhat-api-method:focus {
+      outline: none;
+      border-color: #0e639c;
+    }
+    
+    .nhat-api-section {
+      background: #252526;
+      border-radius: 6px;
+      padding: 10px;
+    }
+    
+    .nhat-api-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 10px;
+      border-bottom: 1px solid #444;
+      padding-bottom: 8px;
+    }
+    
+    .nhat-api-tab {
+      padding: 6px 12px;
+      background: transparent;
+      color: #888;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    
+    .nhat-api-tab:hover { color: #d4d4d4; }
+    .nhat-api-tab.active { background: #0e639c; color: white; }
+    
+    .nhat-api-kv-editor {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+    
+    .nhat-api-kv-row {
+      display: flex;
+      gap: 6px;
+    }
+    
+    .nhat-api-kv-key, .nhat-api-kv-value {
+      flex: 1;
+      padding: 6px 8px;
+      background: #2d2d2d;
+      color: #d4d4d4;
+      border: 1px solid #444;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    
+    .nhat-api-kv-delete {
+      padding: 4px 8px;
+      background: #3c3c3c;
+      color: #d4d4d4;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    
+    .nhat-api-kv-delete:hover { background: #c42b1c; color: white; }
+    
+    .nhat-api-add-row {
+      margin-top: 8px;
+      padding: 6px 12px;
+      background: transparent;
+      color: #0e639c;
+      border: 1px dashed #0e639c;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    
+    .nhat-api-add-row:hover { background: rgba(14, 99, 156, 0.1); }
+    
+    .nhat-api-body-types {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 8px;
+      font-size: 12px;
+    }
+    
+    .nhat-api-body-types label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+    }
+    
+    .nhat-api-body-editor {
+      width: 100%;
+      min-height: 80px;
+      padding: 8px;
+      background: #2d2d2d;
+      color: #d4d4d4;
+      border: 1px solid #444;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 12px;
+      resize: vertical;
+    }
+    
+    .nhat-api-auth-select {
+      width: 100%;
+      padding: 8px;
+      background: #2d2d2d;
+      color: #d4d4d4;
+      border: 1px solid #444;
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+    
+    #nhat-api-auth-fields input {
+      width: 100%;
+      padding: 8px;
+      background: #2d2d2d;
+      color: #d4d4d4;
+      border: 1px solid #444;
+      border-radius: 4px;
+      margin-bottom: 6px;
+    }
+    
+    .nhat-api-response-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 150px;
+    }
+    
+    .nhat-api-response-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-weight: bold;
+    }
+    
+    .nhat-api-status {
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: bold;
+    }
+    
+    .nhat-api-status.success { background: #388a34; color: white; }
+    .nhat-api-status.error { background: #c42b1c; color: white; }
+    .nhat-api-status.redirect { background: #ffc107; color: #000; }
+    
+    .nhat-api-response-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+    
+    .nhat-api-response-body, .nhat-api-response-headers {
+      flex: 1;
+      background: #2d2d2d;
+      border-radius: 4px;
+      padding: 10px;
+      overflow: auto;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 100px;
+      max-height: 250px;
+    }
+    
+    .nhat-api-empty-state {
+      color: #888;
+      text-align: center;
+      padding: 30px;
+    }
+    
+    .nhat-api-loading {
+      text-align: center;
+      padding: 20px;
+      color: #569cd6;
+    }
+    
+    /* JSON Syntax Highlighting */
+    .json-key { color: #9cdcfe; }
+    .json-string { color: #ce9178; }
+    .json-number { color: #b5cea8; }
+    .json-boolean { color: #569cd6; }
+    .json-null { color: #569cd6; }
+    
+    /* Modal */
+    .nhat-api-modal {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+    
+    .nhat-api-modal-content {
+      background: #1e1e1e;
+      border: 1px solid #444;
+      border-radius: 8px;
+      padding: 15px;
+      width: 90%;
+      max-width: 400px;
+    }
+    
+    .nhat-api-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      font-weight: bold;
+    }
+    
+    .nhat-api-modal-close {
+      background: transparent;
+      border: none;
+      color: #888;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    
+    .nhat-api-modal-close:hover { color: #fff; }
+    
+    .nhat-api-curl-input {
+      width: 100%;
+      min-height: 100px;
+      padding: 10px;
+      background: #2d2d2d;
+      color: #d4d4d4;
+      border: 1px solid #444;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 12px;
+      resize: vertical;
+    }
+    
+    .nhat-api-modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    
+    .nhat-api-modal-large {
+      max-width: 600px !important;
+      max-height: 80vh !important;
+      overflow: hidden !important;
+      display: flex !important;
+      flex-direction: column !important;
+    }
+    
+    .nhat-api-records-list, .nhat-api-history-list {
+      flex: 1 !important;
+      overflow-y: auto !important;
+      max-height: 400px !important;
+      padding: 5px !important;
+    }
+    
+    .nhat-api-record-item, .nhat-api-history-item {
+      padding: 10px 12px !important;
+      margin-bottom: 6px !important;
+      background: #2d2d2d !important;
+      border-radius: 6px !important;
+      cursor: pointer !important;
+      transition: all 0.2s ease !important;
+      border: 2px solid transparent !important;
+    }
+
+    .nhat-api-record-item:hover, .nhat-api-history-item:hover {
+      background: #383838 !important;
+      border-color: #0e639c !important;
+      transform: translateY(-1px) !important;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
+    }
+    
+    .nhat-api-record-method {
+      display: inline-block !important;
+      font-size: 10px !important;
+      font-weight: bold !important;
+      padding: 2px 6px !important;
+      border-radius: 3px !important;
+      margin-right: 8px !important;
+      text-transform: uppercase !important;
+    }
+    
+    .nhat-api-method-GET { background: #1e3a2f !important; color: #4ec9b0 !important; }
+    .nhat-api-method-POST { background: #3d3520 !important; color: #dcdcaa !important; }
+    .nhat-api-method-PUT { background: #1e2d3d !important; color: #569cd6 !important; }
+    .nhat-api-method-DELETE { background: #3d1e1e !important; color: #f14c4c !important; }
+    .nhat-api-method-PATCH { background: #3d2d1e !important; color: #ce9178 !important; }
+    
+    .nhat-api-record-url {
+      font-size: 12px !important;
+      color: #d4d4d4 !important;
+      word-break: break-all !important;
+      font-family: 'Consolas', monospace !important;
+    }
+    
+    .nhat-api-record-meta {
+      font-size: 10px !important;
+      color: #666 !important;
+      margin-top: 4px !important;
+    }
+    
+    .nhat-api-view-modes {
+      display: flex !important;
+      gap: 4px !important;
+      padding: 5px 10px !important;
+      background: #252526 !important;
+      border-bottom: 1px solid #333 !important;
+    }
+    
+    .nhat-api-view-btn {
+      padding: 3px 10px !important;
+      font-size: 11px !important;
+      background: transparent !important;
+      border: 1px solid #444 !important;
+      color: #888 !important;
+      border-radius: 3px !important;
+      cursor: pointer !important;
+    }
+    
+    .nhat-api-view-btn.active {
+      background: #0e639c !important;
+      border-color: #0e639c !important;
+      color: white !important;
+    }
+    
+    .nhat-api-view-btn:hover:not(.active) {
+      background: #333 !important;
+      color: #fff !important;
+    }
+    
+    .nhat-api-time, .nhat-api-size {
+      font-size: 11px !important;
+      color: #888 !important;
+      margin-left: 10px !important;
+    }
+    
+    .nhat-api-response-cookies {
+      padding: 10px !important;
+      font-family: 'Consolas', monospace !important;
+      font-size: 12px !important;
+      overflow: auto !important;
+      max-height: 150px !important;
+    }
+    
+    .nhat-api-cookie-item {
+      padding: 6px 0 !important;
+      border-bottom: 1px solid #333 !important;
+    }
+    
+    .nhat-api-cookie-name { color: #9cdcfe !important; }
+    .nhat-api-cookie-value { color: #ce9178 !important; }
+    
+    .nhat-api-resp-tab {
+      padding: 6px 12px !important;
+      cursor: pointer !important;
+      font-size: 11px !important;
+      color: #888 !important;
+      border: none !important;
+      background: transparent !important;
+      border-bottom: 2px solid transparent !important;
+      transition: all 0.2s !important;
+    }
+    
+    .nhat-api-resp-tab:hover { color: #d4d4d4 !important; background: #333 !important; }
+    .nhat-api-resp-tab.active { 
+      color: #d4d4d4 !important; 
+      border-bottom-color: #0e639c !important; 
+      background: #252526 !important; 
+    }
+    
+    .nhat-api-kv-check {
+      width: 16px !important;
+      height: 16px !important;
+      accent-color: #0e639c !important;
+    }
+    
+    /* Resize handle */
+    #nhat-api-tester-panel::after {
+      content: '' !important;
+      position: absolute !important;
+      bottom: 0 !important;
+      right: 0 !important;
+      width: 15px !important;
+      height: 15px !important;
+      cursor: nwse-resize !important;
+      background: linear-gradient(135deg, transparent 50%, #555 50%) !important;
+    }
+    
+    /* Minimized state */
+    #nhat-api-tester-panel.minimized .nhat-api-body {
+      display: none;
+    }
+    
+    #nhat-api-tester-panel.minimized {
+      height: auto !important;
+      min-height: 0;
+    }
+  `;
+  
+  document.head.appendChild(style);
+}
+
+function setupApiTesterEvents() {
+  const panel = document.getElementById('nhat-api-tester-panel');
+  if (!panel) return;
+  
+  // Make draggable
+  makeDraggable(panel, panel.querySelector('.nhat-api-header'));
+  
+  // Close button - chỉ ẩn panel, không xóa (để có thể mở lại bằng indicator)
+  panel.querySelector('#nhat-api-close').addEventListener('click', () => {
+    toggleApiTesterPanel(); // Ẩn panel
+  });
+  
+  // Minimize button
+  panel.querySelector('#nhat-api-minimize').addEventListener('click', () => {
+    panel.classList.toggle('minimized');
+    const btn = panel.querySelector('#nhat-api-minimize');
+    btn.textContent = panel.classList.contains('minimized') ? '🔲' : '➖';
+  });
+
+  // Maximize/Restore button
+  const maximizeBtn = panel.querySelector('#nhat-api-maximize');
+  let prevPanelRect = null;
+  maximizeBtn.addEventListener('click', () => {
+    if (!panel.classList.contains('maximized')) {
+      // Save current size/position
+      prevPanelRect = {
+        top: panel.style.top,
+        left: panel.style.left,
+        right: panel.style.right,
+        bottom: panel.style.bottom,
+        width: panel.style.width,
+        height: panel.style.height,
+        maxWidth: panel.style.maxWidth,
+        maxHeight: panel.style.maxHeight
+      };
+      panel.classList.add('maximized');
+      maximizeBtn.textContent = '🗗';
+    } else {
+      // Restore previous size/position
+      panel.classList.remove('maximized');
+      maximizeBtn.textContent = '🗖';
+      if (prevPanelRect) {
+        panel.style.top = prevPanelRect.top;
+        panel.style.left = prevPanelRect.left;
+        panel.style.right = prevPanelRect.right;
+        panel.style.bottom = prevPanelRect.bottom;
+        panel.style.width = prevPanelRect.width;
+        panel.style.height = prevPanelRect.height;
+        panel.style.maxWidth = prevPanelRect.maxWidth;
+        panel.style.maxHeight = prevPanelRect.maxHeight;
+      }
+    }
+  });
+  
+  // Clear button
+  panel.querySelector('#nhat-api-clear').addEventListener('click', () => {
+    panel.querySelector('#nhat-api-url').value = '';
+    panel.querySelector('#nhat-api-body-editor').value = '';
+    panel.querySelector('#nhat-api-response-body').innerHTML = '<div class="nhat-api-empty-state">Click Send để gửi request</div>';
+    panel.querySelector('#nhat-api-status').textContent = '';
+    panel.querySelector('#nhat-api-status').className = 'nhat-api-status';
+  });
+  
+  // Tab switching (request)
+  panel.querySelectorAll('.nhat-api-tabs .nhat-api-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const tabName = tab.dataset.tab;
+      if (!tabName) return;
+      
+      // Update active tab
+      tab.parentElement.querySelectorAll('.nhat-api-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      
+      // Show/hide content
+      panel.querySelectorAll('.nhat-api-tab-content').forEach(content => {
+        content.style.display = 'none';
+      });
+      const tabContent = panel.querySelector(`#nhat-api-${tabName}-tab`);
+      if (tabContent) tabContent.style.display = 'block';
+    });
+  });
+  
+  // Tab switching (response)
+  panel.querySelectorAll('.nhat-api-response-tabs .nhat-api-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const tabName = tab.dataset.responseTab;
+      if (!tabName) return;
+      
+      tab.parentElement.querySelectorAll('.nhat-api-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      
+      panel.querySelector('#nhat-api-response-body').style.display = tabName === 'body' ? 'block' : 'none';
+      panel.querySelector('#nhat-api-response-headers').style.display = tabName === 'headers' ? 'block' : 'none';
+    });
+  });
+  
+  // Add header row
+  panel.querySelector('#nhat-api-add-header').addEventListener('click', () => {
+    addApiTesterHeaderRow();
+  });
+  
+  // Delete header rows
+  panel.querySelectorAll('.nhat-api-kv-delete').forEach(btn => {
+    btn.addEventListener('click', (e) => deleteApiTesterRow(e.target));
+  });
+  
+  // Auth type change
+  panel.querySelector('#nhat-api-auth-type').addEventListener('change', (e) => {
+    updateApiTesterAuthFields(e.target.value);
+  });
+  
+  // Send request
+  panel.querySelector('#nhat-api-send').addEventListener('click', () => {
+    sendApiTesterRequest();
+  });
+  
+  // Enter key on URL
+  panel.querySelector('#nhat-api-url').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      sendApiTesterRequest();
+    }
+  });
+  
+  // Import cURL button
+  panel.querySelector('#nhat-api-import-curl').addEventListener('click', () => {
+    panel.querySelector('#nhat-api-curl-modal').style.display = 'flex';
+    panel.querySelector('#nhat-api-curl-input').focus();
+  });
+  
+  // Cancel import
+  panel.querySelector('#nhat-api-curl-cancel').addEventListener('click', () => {
+    panel.querySelector('#nhat-api-curl-modal').style.display = 'none';
+  });
+  panel.querySelector('#nhat-api-curl-cancel2').addEventListener('click', () => {
+    panel.querySelector('#nhat-api-curl-modal').style.display = 'none';
+  });
+  
+  // Confirm import
+  panel.querySelector('#nhat-api-curl-import').addEventListener('click', () => {
+    const curlCmd = panel.querySelector('#nhat-api-curl-input').value.trim();
+    if (curlCmd) {
+      parseApiTesterCurl(curlCmd);
+      panel.querySelector('#nhat-api-curl-modal').style.display = 'none';
+      panel.querySelector('#nhat-api-curl-input').value = '';
+    }
+  });
+  
+  // Response tabs (body/headers/cookies)
+  panel.querySelectorAll('.nhat-api-resp-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const tabName = tab.dataset.responseTab;
+      if (!tabName) return;
+      
+      panel.querySelectorAll('.nhat-api-resp-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      
+      panel.querySelector('#nhat-api-response-body').style.display = tabName === 'body' ? 'block' : 'none';
+      panel.querySelector('#nhat-api-response-headers').style.display = tabName === 'headers' ? 'block' : 'none';
+      panel.querySelector('#nhat-api-response-cookies').style.display = tabName === 'cookies' ? 'block' : 'none';
+      panel.querySelector('#nhat-api-view-modes').style.display = tabName === 'body' ? 'flex' : 'none';
+    });
+  });
+  
+  // View mode buttons (Pretty/Raw/Preview)
+  panel.querySelectorAll('.nhat-api-view-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      panel.querySelectorAll('.nhat-api-view-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      
+      const mode = btn.dataset.view;
+      updateApiTesterResponseView(mode);
+    });
+  });
+  
+  // Load Records button
+  panel.querySelector('#nhat-api-load-records').addEventListener('click', () => {
+    showApiTesterRecordsModal();
+  });
+  
+  // Records modal close
+  panel.querySelector('#nhat-api-records-close').addEventListener('click', () => {
+    panel.querySelector('#nhat-api-records-modal').style.display = 'none';
+  });
+  
+  // History button
+  panel.querySelector('#nhat-api-history').addEventListener('click', () => {
+    showApiTesterHistoryModal();
+  });
+  
+  // History modal close
+  panel.querySelector('#nhat-api-history-close').addEventListener('click', () => {
+    panel.querySelector('#nhat-api-history-modal').style.display = 'none';
+  });
+  
+  // History clear
+  panel.querySelector('#nhat-api-history-clear').addEventListener('click', () => {
+    apiTesterHistory = [];
+    panel.querySelector('#nhat-api-history-list').innerHTML = '<div class="nhat-api-empty-state">Chưa có lịch sử</div>';
+  });
+  
+  // Import List button
+  panel.querySelector('#nhat-api-import-list').addEventListener('click', () => {
+    panel.querySelector('#nhat-api-list-modal').style.display = 'flex';
+  });
+  
+  // Import List modal close
+  panel.querySelector('#nhat-api-list-close').addEventListener('click', () => {
+    panel.querySelector('#nhat-api-list-modal').style.display = 'none';
+  });
+  
+  // Import List file select
+  panel.querySelector('#nhat-api-list-select').addEventListener('click', () => {
+    panel.querySelector('#nhat-api-list-file').click();
+  });
+  
+  // Handle file selection
+  panel.querySelector('#nhat-api-list-file').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const data = JSON.parse(event.target.result);
+          displayApiTesterImportedList(data);
+        } catch (err) {
+          alert('Không thể parse file JSON: ' + err.message);
+        }
+      };
+      reader.readAsText(file);
+    }
+  });
+}
+
+function addApiTesterHeaderRow(key = '', value = '') {
+  const editor = document.querySelector('#nhat-api-headers-editor');
+  if (!editor) return;
+  
+  const row = document.createElement('div');
+  row.className = 'nhat-api-kv-row';
+  row.innerHTML = `
+    <input type="text" class="nhat-api-kv-key" placeholder="Header name" value="${escapeApiTesterHtml(key)}">
+    <input type="text" class="nhat-api-kv-value" placeholder="Value" value="${escapeApiTesterHtml(value)}">
+    <button class="nhat-api-kv-delete">✕</button>
+  `;
+  
+  row.querySelector('.nhat-api-kv-delete').addEventListener('click', (e) => {
+    deleteApiTesterRow(e.target);
+  });
+  
+  editor.appendChild(row);
+}
+
+function deleteApiTesterRow(btn) {
+  const row = btn.closest('.nhat-api-kv-row');
+  const editor = row.parentElement;
+  if (editor.querySelectorAll('.nhat-api-kv-row').length > 1) {
+    row.remove();
+  } else {
+    row.querySelector('.nhat-api-kv-key').value = '';
+    row.querySelector('.nhat-api-kv-value').value = '';
+  }
+}
+
+function updateApiTesterAuthFields(type) {
+  const container = document.querySelector('#nhat-api-auth-fields');
+  if (!container) return;
+  
+  switch (type) {
+    case 'bearer':
+      container.innerHTML = '<input type="text" id="nhat-api-bearer-token" placeholder="Enter Bearer Token">';
+      break;
+    case 'basic':
+      container.innerHTML = `
+        <input type="text" id="nhat-api-basic-user" placeholder="Username">
+        <input type="password" id="nhat-api-basic-pass" placeholder="Password">
+      `;
+      break;
+    case 'apikey':
+      container.innerHTML = `
+        <input type="text" id="nhat-api-key-name" placeholder="API Key Name (e.g., X-API-Key)">
+        <input type="text" id="nhat-api-key-value" placeholder="API Key Value">
+      `;
+      break;
+    default:
+      container.innerHTML = '';
+  }
+}
+
+function escapeApiTesterHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+}
+
+// History storage
+let apiTesterHistory = [];
+let apiTesterLastResponse = { body: '', headers: {}, cookies: '' };
+let apiTesterCurrentView = 'pretty';
+
+// Show Records modal and load from storage
+function showApiTesterRecordsModal() {
+  const panel = document.getElementById('nhat-api-tester-panel');
+  const modal = panel.querySelector('#nhat-api-records-modal');
+  const listContainer = panel.querySelector('#nhat-api-records-list');
+  
+  modal.style.display = 'flex';
+  listContainer.innerHTML = '<div class="nhat-api-empty-state">Đang tải...</div>';
+  
+  // Load records from extension storage
+  if (typeof chrome !== 'undefined' && chrome.storage) {
+    chrome.storage.local.get(['recordedRequests'], (result) => {
+      const requests = result.recordedRequests || [];
+      if (requests.length === 0) {
+        listContainer.innerHTML = '<div class="nhat-api-empty-state">📭 Chưa có request nào được record.<br>Bật Record Requests trong popup để ghi lại.</div>';
+        return;
+      }
+      
+      listContainer.innerHTML = '';
+      requests.forEach((req, index) => {
+        const item = document.createElement('div');
+        item.className = 'nhat-api-record-item';
+        item.innerHTML = `
+          <div>
+            <span class="nhat-api-record-method nhat-api-method-${req.method}">${req.method}</span>
+            <span class="nhat-api-record-url">${escapeApiTesterHtml(req.url)}</span>
+          </div>
+          <div class="nhat-api-record-meta">${new Date(req.timestamp).toLocaleString()}</div>
+        `;
+        item.addEventListener('click', () => {
+          loadApiTesterRequest(req);
+          modal.style.display = 'none';
+        });
+        listContainer.appendChild(item);
+      });
+    });
+  } else {
+    listContainer.innerHTML = '<div class="nhat-api-empty-state">⚠️ Không thể truy cập storage</div>';
+  }
+}
+
+// Show History modal
+function showApiTesterHistoryModal() {
+  const panel = document.getElementById('nhat-api-tester-panel');
+  const modal = panel.querySelector('#nhat-api-history-modal');
+  const listContainer = panel.querySelector('#nhat-api-history-list');
+
+  modal.style.display = 'flex';
+
+  if (apiTesterHistory.length === 0) {
+    listContainer.innerHTML = '<div class="nhat-api-empty-state">📭 Chưa có lịch sử.<br>Gửi request để bắt đầu.</div>';
+    return;
+  }
+
+  listContainer.innerHTML = '';
+
+  apiTesterHistory.forEach((item) => {
+    const div = document.createElement('div');
+    div.className = 'nhat-api-history-item';
+
+    div.innerHTML = `
+      <div>
+        <span class="nhat-api-record-method nhat-api-method-${item.method}">${item.method}</span>
+        <span class="nhat-api-record-url">${escapeApiTesterHtml(item.url)}</span>
+      </div>
+      <div class="nhat-api-record-meta">
+        <span>${item.status ? `Status: ${item.status}` : ''}</span>
+        <span>${item.time ? `${item.time}ms` : ''}</span>
+        <span>${new Date(item.timestamp).toLocaleTimeString()}</span>
+      </div>
+    `;
+
+    // Click to load
+    div.addEventListener('click', () => {
+      loadApiTesterRequest(item);
+      modal.style.display = 'none';
+    });
+
+    listContainer.appendChild(div);
+  });
+}
+
+// Display imported list from JSON file
+function displayApiTesterImportedList(data) {
+  const panel = document.getElementById('nhat-api-tester-panel');
+  const listContainer = panel.querySelector('#nhat-api-list-items');
+  
+  let requests = [];
+  if (Array.isArray(data)) {
+    requests = data;
+  } else if (data.requests && Array.isArray(data.requests)) {
+    requests = data.requests;
+  }
+  
+  if (requests.length === 0) {
+    listContainer.innerHTML = '<div class="nhat-api-empty-state">Không tìm thấy request trong file</div>';
+    return;
+  }
+  
+  listContainer.innerHTML = '';
+  requests.forEach((req) => {
+    const item = document.createElement('div');
+    item.className = 'nhat-api-record-item';
+    item.innerHTML = `
+      <div>
+        <span class="nhat-api-record-method nhat-api-method-${req.method || 'GET'}">${req.method || 'GET'}</span>
+        <span class="nhat-api-record-url">${escapeApiTesterHtml(req.url)}</span>
+      </div>
+    `;
+    item.addEventListener('click', () => {
+      loadApiTesterRequest(req);
+      panel.querySelector('#nhat-api-list-modal').style.display = 'none';
+    });
+    listContainer.appendChild(item);
+  });
+}
+
+// Load a request into the form
+function loadApiTesterRequest(req) {
+  const panel = document.getElementById('nhat-api-tester-panel');
+  if (!panel) return;
+  
+  // Set method
+  panel.querySelector('#nhat-api-method').value = req.method || 'GET';
+  
+  // Set URL
+  panel.querySelector('#nhat-api-url').value = req.url || '';
+  
+  // Set headers
+  const headersEditor = panel.querySelector('#nhat-api-headers-editor');
+  headersEditor.innerHTML = '';
+  
+  if (req.headers && typeof req.headers === 'object') {
+    const headers = req.headers;
+    let headerEntries = [];
+    
+    if (Array.isArray(headers)) {
+      headerEntries = headers;
+    } else {
+      headerEntries = Object.entries(headers).map(([key, value]) => ({ key, value }));
+    }
+    
+    if (headerEntries.length === 0) {
+      addApiTesterHeaderRow();
+    } else {
+      headerEntries.forEach(h => {
+        addApiTesterHeaderRow(h.key || h.name, h.value);
+      });
+    }
+  } else {
+    addApiTesterHeaderRow();
+  }
+  
+  // Set body
+  if (req.body) {
+    panel.querySelector('#nhat-api-body-editor').value = typeof req.body === 'object' ? JSON.stringify(req.body, null, 2) : req.body;
+    
+    // Auto-select body type
+    if (typeof req.body === 'object' || (typeof req.body === 'string' && req.body.trim().startsWith('{'))) {
+      panel.querySelector('input[name="nhat-body-type"][value="json"]').checked = true;
+    } else {
+      panel.querySelector('input[name="nhat-body-type"][value="raw"]').checked = true;
+    }
+  }
+  
+  // Show headers tab
+  panel.querySelector('.nhat-api-tabs .nhat-api-tab[data-tab="headers"]').click();
+}
+
+// Update response view mode (Pretty/Raw/Preview)
+function updateApiTesterResponseView(mode) {
+  apiTesterCurrentView = mode;
+  const panel = document.getElementById('nhat-api-tester-panel');
+  const responseBody = panel.querySelector('#nhat-api-response-body');
+
+  if (!apiTesterLastResponse.body) return;
+
+  switch (mode) {
+    case 'pretty':
+      try {
+        const json = JSON.parse(apiTesterLastResponse.body);
+        responseBody.innerHTML = `<pre style="margin:0;white-space:pre-wrap;">${syntaxHighlightApiTesterJson(JSON.stringify(json, null, 2))}</pre>`;
+      } catch {
+        responseBody.innerHTML = `<pre style="margin:0;white-space:pre-wrap;">${escapeApiTesterHtml(apiTesterLastResponse.body)}</pre>`;
+      }
+      break;
+    case 'raw':
+      responseBody.innerHTML = `<pre style="margin:0;white-space:pre-wrap;">${escapeApiTesterHtml(apiTesterLastResponse.body)}</pre>`;
+      break;
+    case 'preview':
+      // For HTML content, render it in an iframe - DO NOT escape HTML for srcdoc
+      responseBody.innerHTML = '';
+      const iframe = document.createElement('iframe');
+      iframe.style.cssText = 'width:100%;height:400px;border:1px solid #444;background:white;border-radius:4px;';
+      iframe.sandbox = 'allow-scripts allow-same-origin';
+      iframe.referrerpolicy = 'no-referrer';
+
+      // Use srcdoc for HTML preview
+      try {
+        iframe.srcdoc = apiTesterLastResponse.body;
+      } catch (e) {
+        console.error('[API Tester] Preview error:', e);
+        responseBody.innerHTML = `<pre style="margin:0;white-space:pre-wrap;color:#f14c4c;">Preview error: ${e.message}</pre>`;
+        return;
+      }
+
+      responseBody.appendChild(iframe);
+      break;
+  }
+}
+
+function syntaxHighlightApiTesterJson(json) {
+  json = escapeApiTesterHtml(json);
+  return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, (match) => {
+    let cls = 'json-number';
+    if (/^"/.test(match)) {
+      if (/:$/.test(match)) {
+        cls = 'json-key';
+      } else {
+        cls = 'json-string';
+      }
+    } else if (/true|false/.test(match)) {
+      cls = 'json-boolean';
+    } else if (/null/.test(match)) {
+      cls = 'json-null';
+    }
+    return `<span class="${cls}">${match}</span>`;
+  });
+}
+
+async function sendApiTesterRequest() {
+  const panel = document.getElementById('nhat-api-tester-panel');
+  if (!panel) return;
+  
+  const method = panel.querySelector('#nhat-api-method').value;
+  let url = panel.querySelector('#nhat-api-url').value.trim();
+  
+  if (!url) {
+    alert('Vui lòng nhập URL');
+    return;
+  }
+  
+  // Xử lý URL tương đối (bắt đầu bằng /)
+  if (url.startsWith('/')) {
+    url = window.location.origin + url;
+  } else if (!url.match(/^https?:\/\//i)) {
+    url = 'https://' + url;
+  }
+  
+  // Get headers
+  const headers = {};
+  panel.querySelectorAll('#nhat-api-headers-editor .nhat-api-kv-row').forEach(row => {
+    const key = row.querySelector('.nhat-api-kv-key').value.trim();
+    const value = row.querySelector('.nhat-api-kv-value').value.trim();
+    if (key) headers[key] = value;
+  });
+  
+  // Get auth headers
+  const authType = panel.querySelector('#nhat-api-auth-type').value;
+  if (authType === 'bearer') {
+    const token = panel.querySelector('#nhat-api-bearer-token')?.value;
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+  } else if (authType === 'basic') {
+    const user = panel.querySelector('#nhat-api-basic-user')?.value || '';
+    const pass = panel.querySelector('#nhat-api-basic-pass')?.value || '';
+    if (user || pass) {
+      headers['Authorization'] = 'Basic ' + btoa(`${user}:${pass}`);
+    }
+  } else if (authType === 'apikey') {
+    const keyName = panel.querySelector('#nhat-api-key-name')?.value;
+    const keyValue = panel.querySelector('#nhat-api-key-value')?.value;
+    if (keyName && keyValue) headers[keyName] = keyValue;
+  }
+  
+  // Get body
+  let body = null;
+  const bodyType = panel.querySelector('input[name="nhat-body-type"]:checked')?.value || 'none';
+  if (method !== 'GET' && method !== 'HEAD' && bodyType !== 'none') {
+    body = panel.querySelector('#nhat-api-body-editor').value;
+    if (bodyType === 'json' && !headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json';
+    } else if (bodyType === 'form' && !headers['Content-Type']) {
+      headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    }
+  }
+  
+  // Show loading
+  const responseBody = panel.querySelector('#nhat-api-response-body');
+  const responseHeaders = panel.querySelector('#nhat-api-response-headers');
+  const statusEl = panel.querySelector('#nhat-api-status');
+  
+  responseBody.innerHTML = '<div class="nhat-api-loading">⏳ Đang gửi request...</div>';
+  statusEl.textContent = '';
+  statusEl.className = 'nhat-api-status';
+  
+  const startTime = performance.now();
+  
+  try {
+    const response = await fetch(url, {
+      method,
+      headers,
+      body,
+      credentials: 'include' // Gửi cookies của trang gốc
+    });
+    
+    const endTime = performance.now();
+    const duration = Math.round(endTime - startTime);
+    
+    // Get response body
+    const contentType = response.headers.get('content-type') || '';
+    let responseText = await response.text();
+    let formattedResponse = responseText;
+    
+    // Store raw response for view mode switching
+    apiTesterLastResponse.body = responseText;
+
+    // Collect headers for later use
+    const responseHeadersObj = {};
+    response.headers.forEach((value, key) => {
+      responseHeadersObj[key] = value;
+    });
+    apiTesterLastResponse.headers = responseHeadersObj;
+
+    // Format JSON if applicable
+    if (contentType.includes('application/json') || responseText.trim().startsWith('{') || responseText.trim().startsWith('[')) {
+      try {
+        const json = JSON.parse(responseText);
+        formattedResponse = syntaxHighlightApiTesterJson(JSON.stringify(json, null, 2));
+      } catch (e) {
+        formattedResponse = escapeApiTesterHtml(responseText);
+      }
+    } else {
+      formattedResponse = escapeApiTesterHtml(responseText);
+    }
+
+    // Display response (default to pretty mode)
+    responseBody.innerHTML = formattedResponse || '<div class="nhat-api-empty-state">Empty response</div>';
+
+    // Reset view mode to pretty
+    panel.querySelectorAll('.nhat-api-view-btn').forEach(btn => btn.classList.remove('active'));
+    panel.querySelector('.nhat-api-view-btn[data-view="pretty"]').classList.add('active');
+    apiTesterCurrentView = 'pretty';
+
+    // Display headers
+    let headersHtml = '';
+    response.headers.forEach((value, key) => {
+      headersHtml += `<span class="json-key">${escapeApiTesterHtml(key)}</span>: <span class="json-string">${escapeApiTesterHtml(value)}</span>\n`;
+    });
+    responseHeaders.innerHTML = headersHtml || 'No headers';
+
+    // Status
+    const size = new Blob([responseText]).size;
+    const sizeStr = size > 1024 ? (size / 1024).toFixed(1) + ' KB' : size + ' B';
+    statusEl.textContent = `${response.status} ${response.statusText} | ${duration}ms | ${sizeStr}`;
+
+    if (response.status >= 200 && response.status < 300) {
+      statusEl.classList.add('success');
+    } else if (response.status >= 300 && response.status < 400) {
+      statusEl.classList.add('redirect');
+    } else {
+      statusEl.classList.add('error');
+    }
+
+    // Add to history
+    apiTesterHistory.unshift({
+      method,
+      url,
+      status: response.status,
+      time: duration,
+      timestamp: Date.now(),
+      headers,
+      body
+    });
+
+    // Keep only last 50 items
+    if (apiTesterHistory.length > 50) {
+      apiTesterHistory = apiTesterHistory.slice(0, 50);
+    }
+    
+  } catch (error) {
+    const endTime = performance.now();
+    const duration = Math.round(endTime - startTime);
+    
+    responseBody.innerHTML = `<div style="color: #f48771;">❌ Error: ${escapeApiTesterHtml(error.message)}</div>`;
+    statusEl.textContent = `Error | ${duration}ms`;
+    statusEl.classList.add('error');
+  }
+}
+
+function parseApiTesterCurl(curlCmd) {
+  const panel = document.getElementById('nhat-api-tester-panel');
+  if (!panel) return;
+  
+  try {
+    // Normalize curl command
+    let cmd = curlCmd.replace(/\\\n/g, ' ').replace(/\s+/g, ' ').trim();
+    
+    // Extract URL
+    const urlMatch = cmd.match(/curl\s+(?:.*?\s+)?['"]?(https?:\/\/[^\s'"]+|\/[^\s'"]+)['"]?/i) ||
+                     cmd.match(/['"]?(https?:\/\/[^\s'"]+)['"]?/);
+    if (urlMatch) {
+      panel.querySelector('#nhat-api-url').value = urlMatch[1];
+    }
+    
+    // Extract method
+    const methodMatch = cmd.match(/-X\s+(\w+)/i);
+    if (methodMatch) {
+      panel.querySelector('#nhat-api-method').value = methodMatch[1].toUpperCase();
+    } else if (cmd.includes('-d ') || cmd.includes('--data')) {
+      panel.querySelector('#nhat-api-method').value = 'POST';
+    }
+    
+    // Extract headers
+    const headerRegex = /-H\s+['"]([^'"]+)['"]/gi;
+    let headerMatch;
+    
+    // Clear existing headers
+    const headersEditor = panel.querySelector('#nhat-api-headers-editor');
+    headersEditor.innerHTML = '';
+    
+    let headerCount = 0;
+    while ((headerMatch = headerRegex.exec(cmd)) !== null) {
+      const [key, ...valueParts] = headerMatch[1].split(':');
+      const value = valueParts.join(':').trim();
+      if (key && value) {
+        addApiTesterHeaderRow(key.trim(), value);
+        headerCount++;
+      }
+    }
+    
+    // Add empty row if no headers
+    if (headerCount === 0) {
+      addApiTesterHeaderRow();
+    }
+    
+    // Extract body
+    const dataMatch = cmd.match(/(?:-d|--data(?:-raw)?)\s+['"](.+?)['"]/s) ||
+                      cmd.match(/(?:-d|--data(?:-raw)?)\s+(\S+)/);
+    if (dataMatch) {
+      const body = dataMatch[1].replace(/\\"/g, '"').replace(/\\'/g, "'");
+      panel.querySelector('#nhat-api-body-editor').value = body;
+      
+      // Switch to body tab
+      panel.querySelector('.nhat-api-tabs .nhat-api-tab[data-tab="body"]').click();
+      
+      // Check if JSON
+      try {
+        JSON.parse(body);
+        panel.querySelector('input[name="nhat-body-type"][value="json"]').checked = true;
+      } catch (e) {
+        panel.querySelector('input[name="nhat-body-type"][value="raw"]').checked = true;
+      }
+    }
+    
+    console.log('[API Tester] cURL imported successfully');
+    
+  } catch (error) {
+    console.error('[API Tester] Failed to parse cURL:', error);
+    alert('Không thể parse cURL command. Vui lòng kiểm tra lại format.');
+  }
+}
+
+function makeDraggable(element, handle) {
+  let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+  
+  handle.addEventListener('mousedown', dragMouseDown);
+  
+  function dragMouseDown(e) {
+    if (e.target.tagName === 'BUTTON') return;
+    e.preventDefault();
+    pos3 = e.clientX;
+    pos4 = e.clientY;
+    document.addEventListener('mouseup', closeDragElement);
+    document.addEventListener('mousemove', elementDrag);
+  }
+  
+  function elementDrag(e) {
+    e.preventDefault();
+    pos1 = pos3 - e.clientX;
+    pos2 = pos4 - e.clientY;
+    pos3 = e.clientX;
+    pos4 = e.clientY;
+    
+    let newTop = element.offsetTop - pos2;
+    let newLeft = element.offsetLeft - pos1;
+    
+    // Keep within viewport
+    newTop = Math.max(0, Math.min(newTop, window.innerHeight - 50));
+    newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - 100));
+    
+    element.style.top = newTop + 'px';
+    element.style.left = newLeft + 'px';
+    element.style.right = 'auto';
+  }
+  
+  function closeDragElement() {
+    document.removeEventListener('mouseup', closeDragElement);
+    document.removeEventListener('mousemove', elementDrag);
+  }
+}
 
 // ==================== COPY MODE FUNCTIONS ====================
 
@@ -934,6 +2796,117 @@ function showCopyTooltip(x, y, text) {
       setTimeout(() => tooltip.remove(), 300);
     }
   }, 1500);
+}
+
+// Hiển thị menu chọn copy Value hay Text cho element SELECT
+function showSelectCopyMenu(x, y, selectElement) {
+  // Xóa menu cũ nếu có
+  const existingMenu = document.getElementById('nhat-select-copy-menu');
+  if (existingMenu) {
+    existingMenu.remove();
+  }
+  
+  // Lấy option đang được chọn
+  const selectedOption = selectElement.options[selectElement.selectedIndex];
+  if (!selectedOption) return;
+  
+  const value = selectedOption.value || '';
+  const text = selectedOption.textContent?.trim() || selectedOption.innerText?.trim() || '';
+  
+  const menu = document.createElement('div');
+  menu.id = 'nhat-select-copy-menu';
+  menu.innerHTML = `
+    <div style="font-size: 11px; opacity: 0.8; margin-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.3); padding-bottom: 6px;">
+      📋 Chọn kiểu copy:
+    </div>
+    <div class="nhat-copy-option" data-type="value" style="padding: 8px 10px; cursor: pointer; border-radius: 4px; margin-bottom: 4px; background: rgba(255,255,255,0.1);">
+      <div style="font-weight: bold; font-size: 12px;">📝 Value</div>
+      <div style="font-size: 10px; opacity: 0.8; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">"${value}"</div>
+    </div>
+    <div class="nhat-copy-option" data-type="text" style="padding: 8px 10px; cursor: pointer; border-radius: 4px; background: rgba(255,255,255,0.1);">
+      <div style="font-weight: bold; font-size: 12px;">📄 Text</div>
+      <div style="font-size: 10px; opacity: 0.8; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">"${text}"</div>
+    </div>
+  `;
+  menu.style.cssText = `
+    position: fixed;
+    top: ${y + 10}px;
+    left: ${x}px;
+    transform: translateX(-50%);
+    background: rgba(33, 150, 243, 0.95);
+    color: white;
+    padding: 10px 12px;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    z-index: 999999999;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    animation: copyTooltipIn 0.2s ease-out;
+    min-width: 200px;
+  `;
+  
+  // Append vào body hoặc documentElement
+  const container = document.body || document.documentElement;
+  container.appendChild(menu);
+  
+  // Xử lý hover effect
+  menu.querySelectorAll('.nhat-copy-option').forEach(option => {
+    option.addEventListener('mouseenter', () => {
+      option.style.background = 'rgba(255,255,255,0.25)';
+    });
+    option.addEventListener('mouseleave', () => {
+      option.style.background = 'rgba(255,255,255,0.1)';
+    });
+    
+    // Xử lý click để copy
+    option.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const type = option.dataset.type;
+      const copyText = type === 'value' ? value : text;
+      
+      navigator.clipboard.writeText(copyText).then(() => {
+        console.log('[Keep Alive] Copied from SELECT:', type, '=', copyText);
+        menu.remove();
+        showCopyTooltip(x, y, copyText);
+      }).catch(err => {
+        console.error('[Keep Alive] Failed to copy:', err);
+        // Fallback
+        try {
+          const textArea = document.createElement('textarea');
+          textArea.value = copyText;
+          textArea.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
+          document.body.appendChild(textArea);
+          textArea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textArea);
+          menu.remove();
+          showCopyTooltip(x, y, copyText);
+        } catch (e2) {
+          console.error('[Keep Alive] Fallback copy failed:', e2);
+        }
+      });
+    });
+  });
+  
+  // Click bên ngoài menu để đóng
+  const closeMenu = (e) => {
+    if (!menu.contains(e.target)) {
+      menu.remove();
+      document.removeEventListener('click', closeMenu, true);
+    }
+  };
+  // Delay một chút để tránh click hiện tại đóng menu ngay
+  setTimeout(() => {
+    document.addEventListener('click', closeMenu, true);
+  }, 100);
+  
+  // Tự động đóng sau 10 giây nếu không chọn
+  setTimeout(() => {
+    if (menu.parentElement) {
+      menu.remove();
+      document.removeEventListener('click', closeMenu, true);
+    }
+  }, 10000);
 }
 
 // Tạo floating indicator cho Copy Mode (CHỈ Ở TOP FRAME)
@@ -1140,8 +3113,24 @@ function initCopyModeIndicator() {
 function getTextFromElement(element) {
   if (!element) return '';
   
-  // Ưu tiên các thuộc tính có text
-  if (element.value && typeof element.value === 'string') {
+  // Nếu là SELECT element, ưu tiên lấy text của selected option
+  if (element.tagName === 'SELECT') {
+    const selectedOption = element.options[element.selectedIndex];
+    if (selectedOption) {
+      const optionText = selectedOption.textContent?.trim() || selectedOption.innerText?.trim();
+      if (optionText) {
+        return optionText;
+      }
+      // Fallback về value nếu không có text
+      if (selectedOption.value) {
+        return selectedOption.value.trim();
+      }
+    }
+  }
+  
+  // Ưu tiên các thuộc tính có text (cho các element khác như INPUT)
+  // Nhưng không ưu tiên value cho SELECT (đã xử lý ở trên)
+  if (element.tagName !== 'SELECT' && element.value && typeof element.value === 'string') {
     return element.value.trim();
   }
   
@@ -1221,10 +3210,19 @@ function handleCopyModeClick(e) {
     if (target.id && target.id.startsWith('nhat-')) return;
     if (target.closest && target.closest('#nhat-copy-mode-indicator')) return;
     if (target.closest && target.closest('#nhat-copy-tooltip')) return;
+    if (target.closest && target.closest('#nhat-select-copy-menu')) return;
     if (target.closest && target.closest('#nhat-debug-indicator')) return;
     if (target.closest && target.closest('#nhat-devtools-button')) return;
   } catch (err) {
     // Bỏ qua lỗi closest
+  }
+  
+  // Kiểm tra nếu là SELECT element -> hiện menu chọn copy value hoặc text
+  if (target.tagName === 'SELECT') {
+    e.preventDefault();
+    e.stopPropagation();
+    showSelectCopyMenu(e.clientX, e.clientY, target);
+    return;
   }
   
   // Lấy text từ element
@@ -1720,7 +3718,7 @@ function updateTranslateModeIndicatorState(indicator) {
   if (translateModeEnabled) {
     indicator.innerHTML = `
       <div style="display: flex; align-items: center; gap: 6px;">
-        <span style="font-size: 14px;">🈯</span>
+        <span style="font-size: 14px;">🌐</span>
         <span style="font-size: 11px; font-weight: bold;">Dịch: BẬT</span>
       </div>
     `;
@@ -1728,7 +3726,7 @@ function updateTranslateModeIndicatorState(indicator) {
   } else {
     indicator.innerHTML = `
       <div style="display: flex; align-items: center; gap: 6px;">
-        <span style="font-size: 14px;">🈯</span>
+        <span style="font-size: 14px;">🌐</span>
         <span style="font-size: 11px; font-weight: bold;">Dịch: TẮT</span>
       </div>
     `;
@@ -2220,6 +4218,192 @@ function updateSheetsHighlight(clickEvent) {
   overlay.appendChild(dot);
 }
 
+// ==================== WEB CROSSHAIR INDICATOR ====================
+let crosshairIndicator = null;
+
+// Tạo floating indicator cho Crosshair (CHỈ Ở TOP FRAME)
+// Indicator luôn hiện, chỉ đổi trạng thái BẬT/TẮT
+function createCrosshairIndicator() {
+  if (!isTopFrame) return;
+  
+  let indicator = document.getElementById('ka-crosshair-indicator');
+  
+  // Nếu đã có indicator, chỉ cập nhật trạng thái
+  if (indicator) {
+    updateCrosshairIndicatorState(indicator);
+    return;
+  }
+  
+  indicator = document.createElement('div');
+  indicator.id = 'ka-crosshair-indicator';
+  
+  // Set text nội dung ngay
+  indicator.innerHTML = sheetsHighlightEnabled ? '➕ Crosshair: BẬT' : '➕ Crosshair: TẮT';
+  
+  // Set màu mặc định dựa trên trạng thái
+  const defaultBg = sheetsHighlightEnabled 
+    ? 'linear-gradient(135deg, #e10e0e, #ff4444)'
+    : 'linear-gradient(135deg, #757575, #616161)';
+  
+  indicator.style.cssText = `
+    position: fixed !important;
+    bottom: 140px !important;
+    right: 20px !important;
+    color: white !important;
+    padding: 8px 12px !important;
+    border-radius: 20px !important;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3) !important;
+    z-index: 2147483647 !important;
+    font-family: Arial, sans-serif !important;
+    cursor: pointer !important;
+    user-select: none !important;
+    display: ${showCrosshairIndicator ? 'block' : 'none'} !important;
+    background: ${defaultBg} !important;
+    font-size: 11px !important;
+    font-weight: bold !important;
+    transition: background 0.3s ease !important;
+  `;
+  
+  // Drag and drop functionality
+  let isDragging = false;
+  let hasMoved = false;
+  let currentX;
+  let currentY;
+  let initialX;
+  let initialY;
+  let xOffset = 0;
+  let yOffset = 0;
+  
+  // Load vị trí đã lưu từ localStorage
+  try {
+    const savedPosition = localStorage.getItem('ka-crosshair-indicator-position');
+    if (savedPosition) {
+      const pos = JSON.parse(savedPosition);
+      const maxX = window.innerWidth - 100;
+      const maxY = window.innerHeight - 100;
+      const minX = -window.innerWidth + 100;
+      const minY = -window.innerHeight + 100;
+      
+      xOffset = Math.max(minX, Math.min(maxX, pos.x || 0));
+      yOffset = Math.max(minY, Math.min(maxY, pos.y || 0));
+      
+      if (Math.abs(pos.x) > maxX || Math.abs(pos.y) > maxY) {
+        xOffset = 0;
+        yOffset = 0;
+        localStorage.removeItem('ka-crosshair-indicator-position');
+      } else {
+        indicator.style.transform = `translate(${xOffset}px, ${yOffset}px)`;
+      }
+    }
+  } catch (e) {
+    console.log('[Keep Alive] Could not load saved crosshair indicator position');
+  }
+  
+  indicator.addEventListener('mousedown', (e) => {
+    initialX = e.clientX - xOffset;
+    initialY = e.clientY - yOffset;
+    isDragging = true;
+    hasMoved = false;
+  });
+  
+  document.addEventListener('mousemove', (e) => {
+    if (isDragging) {
+      e.preventDefault();
+      currentX = e.clientX - initialX;
+      currentY = e.clientY - initialY;
+      
+      if (Math.abs(currentX - xOffset) > 5 || Math.abs(currentY - yOffset) > 5) {
+        hasMoved = true;
+      }
+      
+      xOffset = currentX;
+      yOffset = currentY;
+      indicator.style.transform = `translate(${currentX}px, ${currentY}px)`;
+    }
+  });
+  
+  document.addEventListener('mouseup', () => {
+    if (isDragging) {
+      isDragging = false;
+      
+      try {
+        localStorage.setItem('ka-crosshair-indicator-position', JSON.stringify({
+          x: xOffset,
+          y: yOffset
+        }));
+      } catch (e) {
+        console.log('[Keep Alive] Could not save crosshair indicator position');
+      }
+    }
+  });
+  
+  // Click để bật/tắt Crosshair (chỉ khi không kéo)
+  indicator.addEventListener('click', (e) => {
+    if (hasMoved) {
+      hasMoved = false;
+      return;
+    }
+    
+    sheetsHighlightEnabled = !sheetsHighlightEnabled;
+    safeStorageSet({ sheetsHighlightEnabled });
+    if (sheetsHighlightEnabled) {
+      enableSheetsHighlight();
+    } else {
+      disableSheetsHighlight();
+    }
+    updateCrosshairIndicatorState(indicator);
+  });
+  
+  // Append vào body hoặc documentElement (cho frameset)
+  const container = document.body || document.documentElement;
+  container.appendChild(indicator);
+  
+  console.log('[Keep Alive] Crosshair indicator created');
+}
+
+function updateCrosshairIndicatorState(indicator) {
+  if (!indicator) {
+    indicator = document.getElementById('ka-crosshair-indicator');
+  }
+  if (!indicator) return;
+  
+  if (sheetsHighlightEnabled) {
+    indicator.innerHTML = '➕ Crosshair: BẬT';
+    indicator.style.background = 'linear-gradient(135deg, #e10e0e, #ff4444)';
+  } else {
+    indicator.innerHTML = '➕ Crosshair: TẮT';
+    indicator.style.background = 'linear-gradient(135deg, #757575, #616161)';
+  }
+  
+  indicator.style.display = showCrosshairIndicator ? 'block' : 'none';
+}
+
+// Khởi tạo Crosshair indicator khi DOM ready
+function initCrosshairIndicator() {
+  if (!isTopFrame) return;
+  
+  console.log('[Keep Alive] initCrosshairIndicator called, showCrosshairIndicator:', showCrosshairIndicator);
+  
+  const isDOMReady = () => {
+    return document.body || document.documentElement || document.readyState !== 'loading';
+  };
+  
+  const doCreate = () => {
+    console.log('[Keep Alive] Creating Crosshair indicator...');
+    createCrosshairIndicator();
+  };
+  
+  if (isDOMReady()) {
+    doCreate();
+  } else {
+    document.addEventListener('DOMContentLoaded', doCreate, { once: true });
+  }
+}
+
+function updateCrosshairIndicator() {
+  updateCrosshairIndicatorState();
+}
+
 // Theo dõi selection thay đổi
 let sheetsHighlightInterval = null;
 let sheetsClickHandler = null;
@@ -2233,6 +4417,7 @@ function enableSheetsHighlight() {
   console.log('[Keep Alive] Web Crosshair enabled');
   
   updateSheetsHighlightColor();
+  updateCrosshairIndicator();
   
   // Cập nhật khi click vào bất kỳ đâu
   sheetsClickHandler = (e) => {
@@ -2295,6 +4480,7 @@ function disableSheetsHighlight() {
   }
   
   removeSheetsOverlay();
+  updateCrosshairIndicator();
 }
 
 // Debounce helper
@@ -2487,3 +4673,327 @@ function clearSheetsHighlight() {
     });
   });
 })();
+
+// ==================== SCREENSHOT CAPTURE MODULE ====================
+(function() {
+  if (!isTopFrame) return; // Chỉ chạy ở top frame
+
+  let screenshotOverlay = null;
+  let isSelecting = false;
+  let startX = 0, startY = 0;
+  let selectionBox = null;
+  let screenshotScale = 2;
+  let screenshotSaveFile = false;
+  let screenshotModeEnabled = false;
+  let showScreenshotIndicator = true;
+
+  // Load trạng thái từ storage
+  safeStorageGet(['screenshotScale', 'screenshotSaveFile', 'screenshotModeEnabled', 'showScreenshotIndicator'], (result) => {
+    screenshotScale = parseInt(result.screenshotScale) || 2;
+    screenshotSaveFile = result.screenshotSaveFile || false;
+    screenshotModeEnabled = result.screenshotModeEnabled || false;
+    showScreenshotIndicator = result.showScreenshotIndicator !== false;
+    initScreenshotIndicator();
+  });
+
+  // ── Indicator nổi ──────────────────────────────────────────────
+  function createScreenshotIndicator() {
+    let indicator = document.getElementById('ka-screenshot-indicator');
+    if (indicator) { updateScreenshotIndicatorState(indicator); return; }
+
+    indicator = document.createElement('div');
+    indicator.id = 'ka-screenshot-indicator';
+    indicator.innerHTML = '📸 Chụp ngay';
+
+    indicator.style.cssText = `
+      position: fixed !important;
+      bottom: 100px !important;
+      right: 20px !important;
+      color: white !important;
+      padding: 8px 12px !important;
+      border-radius: 20px !important;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3) !important;
+      z-index: 2147483647 !important;
+      font-family: Arial, sans-serif !important;
+      cursor: pointer !important;
+      user-select: none !important;
+      display: ${showScreenshotIndicator ? 'block' : 'none'} !important;
+      background: linear-gradient(135deg, #00bcd4, #0097a7) !important;
+      font-size: 11px !important;
+      font-weight: bold !important;
+    `;
+
+    // Drag
+    let isDragging = false, hasMoved = false;
+    let currentX, currentY, initialX, initialY, xOffset = 0, yOffset = 0;
+    try {
+      const saved = localStorage.getItem('ka-screenshot-indicator-position');
+      if (saved) {
+        const pos = JSON.parse(saved);
+        xOffset = pos.x || 0; yOffset = pos.y || 0;
+        indicator.style.transform = `translate(${xOffset}px, ${yOffset}px)`;
+      }
+    } catch(e) {}
+
+    indicator.addEventListener('mousedown', (e) => {
+      initialX = e.clientX - xOffset; initialY = e.clientY - yOffset;
+      isDragging = true; hasMoved = false;
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      e.preventDefault();
+      currentX = e.clientX - initialX; currentY = e.clientY - initialY;
+      if (Math.abs(currentX - xOffset) > 5 || Math.abs(currentY - yOffset) > 5) hasMoved = true;
+      xOffset = currentX; yOffset = currentY;
+      indicator.style.transform = `translate(${currentX}px, ${currentY}px)`;
+    });
+    document.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        try { localStorage.setItem('ka-screenshot-indicator-position', JSON.stringify({ x: xOffset, y: yOffset })); } catch(e) {}
+      }
+    });
+
+    // Click = chụp ngay luôn (không bật/tắt)
+    indicator.addEventListener('click', (e) => {
+      if (hasMoved) { hasMoved = false; return; }
+      safeStorageGet(['screenshotScale', 'screenshotSaveFile'], (r) => {
+        screenshotScale = parseInt(r.screenshotScale) || 2;
+        screenshotSaveFile = r.screenshotSaveFile || false;
+        createOverlay();
+      });
+    });
+
+    const container = document.body || document.documentElement;
+    container.appendChild(indicator);
+  }
+
+  function updateScreenshotIndicatorState(indicator) {
+    if (!indicator) indicator = document.getElementById('ka-screenshot-indicator');
+    if (!indicator) return;
+    indicator.style.display = showScreenshotIndicator ? 'block' : 'none';
+  }
+
+  function initScreenshotIndicator() {
+    const doCreate = () => createScreenshotIndicator();
+    if (document.body || document.documentElement) {
+      doCreate();
+    } else {
+      document.addEventListener('DOMContentLoaded', doCreate, { once: true });
+    }
+  }
+
+  // ── Toast ──────────────────────────────────────────────────────
+  function showScreenshotToast(msg, color = '#333', duration = 2500) {
+    let toast = document.getElementById('nhat-screenshot-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'nhat-screenshot-toast';
+      toast.style.cssText = `
+        position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+        background: ${color}; color: #fff; padding: 10px 20px; border-radius: 8px;
+        font-size: 13px; font-family: sans-serif; z-index: 2147483647;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.3); pointer-events: none;
+        transition: opacity 0.3s; opacity: 1; white-space: nowrap;
+      `;
+      document.body.appendChild(toast);
+    }
+    toast.style.background = color;
+    toast.textContent = msg;
+    toast.style.opacity = '1';
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, duration);
+  }
+
+  // ── Selection overlay ──────────────────────────────────────────
+  function getAbsoluteCoords(e) {
+    return { x: e.clientX + window.scrollX, y: e.clientY + window.scrollY };
+  }
+
+  function createOverlay() {
+    removeOverlay();
+
+    screenshotOverlay = document.createElement('div');
+    screenshotOverlay.id = 'nhat-screenshot-overlay';
+    screenshotOverlay.style.cssText = `
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      z-index: 2147483646; cursor: crosshair; background: rgba(0,0,0,0.01);
+      user-select: none; -webkit-user-select: none;
+    `;
+
+    const hint = document.createElement('div');
+    hint.style.cssText = `
+      position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.75); color: #fff; padding: 8px 16px;
+      border-radius: 20px; font-size: 13px; font-family: sans-serif;
+      pointer-events: none; white-space: nowrap; z-index: 1;
+    `;
+    hint.textContent = '🖱️ Kéo để chọn vùng chụp  •  ESC để hủy';
+    screenshotOverlay.appendChild(hint);
+
+    selectionBox = document.createElement('div');
+    selectionBox.style.cssText = `
+      position: absolute; border: 2px dashed #00bcd4; background: rgba(0,188,212,0.08);
+      pointer-events: none; display: none; box-sizing: border-box;
+    `;
+    screenshotOverlay.appendChild(selectionBox);
+
+    document.body.appendChild(screenshotOverlay);
+
+    screenshotOverlay.addEventListener('mousedown', onMouseDown, { passive: false });
+    document.addEventListener('mousemove', onMouseMove, { passive: false });
+    document.addEventListener('mouseup', onMouseUp, { passive: false });
+    document.addEventListener('keydown', onKeyDown, { passive: false });
+  }
+
+  function removeOverlay() {
+    if (screenshotOverlay) {
+      screenshotOverlay.removeEventListener('mousedown', onMouseDown);
+      screenshotOverlay.remove();
+      screenshotOverlay = null;
+    }
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+    document.removeEventListener('keydown', onKeyDown);
+    isSelecting = false;
+    selectionBox = null;
+  }
+
+  function onKeyDown(e) {
+    if (e.key === 'Escape') {
+      removeOverlay();
+      showScreenshotToast('❌ Đã hủy chụp màn hình', '#555');
+    }
+  }
+
+  function onMouseDown(e) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    isSelecting = true;
+    const coords = getAbsoluteCoords(e);
+    startX = coords.x; startY = coords.y;
+    if (selectionBox) {
+      selectionBox.style.display = 'block';
+      selectionBox.style.left = e.clientX + 'px';
+      selectionBox.style.top  = e.clientY + 'px';
+      selectionBox.style.width = '0';
+      selectionBox.style.height = '0';
+    }
+  }
+
+  function onMouseMove(e) {
+    if (!isSelecting || !selectionBox) return;
+    e.preventDefault();
+    const abs = getAbsoluteCoords(e);
+    const x = Math.min(startX, abs.x) - window.scrollX;
+    const y = Math.min(startY, abs.y) - window.scrollY;
+    selectionBox.style.left   = x + 'px';
+    selectionBox.style.top    = y + 'px';
+    selectionBox.style.width  = Math.abs(abs.x - startX) + 'px';
+    selectionBox.style.height = Math.abs(abs.y - startY) + 'px';
+  }
+
+  function onMouseUp(e) {
+    if (!isSelecting) return;
+    e.preventDefault();
+    isSelecting = false;
+    const absEnd = getAbsoluteCoords(e);
+    const x = Math.round(Math.min(startX, absEnd.x));
+    const y = Math.round(Math.min(startY, absEnd.y));
+    const w = Math.round(Math.abs(absEnd.x - startX));
+    const h = Math.round(Math.abs(absEnd.y - startY));
+    removeOverlay();
+    if (w < 5 || h < 5) { showScreenshotToast('⚠️ Vùng chọn quá nhỏ, thử lại', '#f57c00'); return; }
+    captureRegion(x, y, w, h);
+  }
+
+  // ── Capture ────────────────────────────────────────────────────
+  async function captureRegion(x, y, w, h) {
+    showScreenshotToast('⏳ Đang chụp...', '#1565c0', 5000);
+    try {
+      const response = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({ action: 'captureVisibleTab' }, (res) => {
+          if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+          else resolve(res);
+        });
+      });
+      if (!response || !response.dataUrl) throw new Error(response?.error || 'Không chụp được ảnh');
+
+      const img = await loadImage(response.dataUrl);
+      const scaleX = img.naturalWidth / window.innerWidth;
+      const scaleY = img.naturalHeight / window.innerHeight;
+      const vx = x - (response.scrollX || 0);
+      const vy = y - (response.scrollY || 0);
+      const cropX = Math.round(vx * scaleX);
+      const cropY = Math.round(vy * scaleY);
+      const cropW = Math.round(w * scaleX);
+      const cropH = Math.round(h * scaleY);
+      if (cropW <= 0 || cropH <= 0) throw new Error('Vùng chọn không hợp lệ');
+
+      const canvas = document.createElement('canvas');
+      canvas.width  = cropW * screenshotScale;
+      canvas.height = cropH * screenshotScale;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
+
+      canvas.toBlob(async (blob) => {
+        if (!blob) { showScreenshotToast('❌ Không tạo được ảnh', '#c62828'); return; }
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+          showScreenshotToast('✅ Đã copy ảnh vào clipboard!', '#2e7d32');
+        } catch (clipErr) {
+          downloadBlob(blob, `screenshot_${Date.now()}.png`);
+          showScreenshotToast('📥 Clipboard bị chặn, đã tải file thay thế', '#f57c00');
+        }
+        if (screenshotSaveFile) downloadBlob(blob, `screenshot_${Date.now()}.png`);
+      }, 'image/png');
+    } catch (err) {
+      console.error('[Screenshot] Error:', err);
+      showScreenshotToast('❌ Lỗi: ' + err.message, '#c62828');
+    }
+  }
+
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // ── Phím tắt Alt+S ────────────────────────────────────────────
+  document.addEventListener('keydown', (e) => {
+    if (e.altKey && (e.key === 's' || e.key === 'S') && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      safeStorageGet(['screenshotScale', 'screenshotSaveFile'], (r) => {
+        screenshotScale = parseInt(r.screenshotScale) || 2;
+        screenshotSaveFile = r.screenshotSaveFile || false;
+        createOverlay();
+      });
+    }
+  });
+
+  // ── Callback từ popup ─────────────────────────────────────────
+  window.__screenshotStartCallback = function(scale, saveFile) {
+    screenshotScale = parseInt(scale) || 2;
+    screenshotSaveFile = saveFile || false;
+    createOverlay();
+  };
+
+  // ── Handle message toggleScreenshotIndicator ──────────────────
+  window.__screenshotToggleIndicator = function(show) {
+    showScreenshotIndicator = (show !== false);
+    updateScreenshotIndicatorState();
+  };
+})();
+

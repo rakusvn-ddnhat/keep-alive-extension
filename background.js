@@ -221,6 +221,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
       downloadFile(`recorded_requests_${timestamp}.sh`, curlCommands);
       sendResponse({ success: true });
+    } else if (message.action === 'exportCurlJson') {
+      // Export as JSON for API Tester import
+      if (recordedRequests.length === 0) {
+        sendResponse({ success: false, error: 'Không có request nào để export!' });
+        return true;
+      }
+      const curlList = recordedRequests.map(req => ({
+        curl: generateCurl(req),
+        method: req.method,
+        url: req.url,
+        headers: req.headers,
+        body: req.body || null,
+        timestamp: req.timestamp || new Date().toISOString()
+      }));
+      const jsonContent = JSON.stringify({ 
+        exportedAt: new Date().toISOString(),
+        source: 'DevToolbox Extension',
+        count: curlList.length,
+        requests: curlList 
+      }, null, 2);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      downloadFile(`curl_list_${timestamp}.json`, jsonContent);
+      sendResponse({ success: true });
     } else if (message.action === 'exportJMeter') {
       if (recordedRequests.length === 0) {
         sendResponse({ success: false, error: 'Không có request nào để export!' });
@@ -298,6 +321,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else {
           console.log('[Background] Download started:', downloadId);
           sendResponse({ success: true, downloadId });
+        }
+      });
+      return true;
+    } else if (message.action === 'captureVisibleTab') {
+      // Chụp màn hình tab đang active
+      const tabId = sender.tab ? sender.tab.id : null;
+      const windowId = sender.tab ? sender.tab.windowId : chrome.windows.WINDOW_ID_CURRENT;
+      chrome.tabs.captureVisibleTab(windowId, { format: 'png', quality: 100 }, (dataUrl) => {
+        if (chrome.runtime.lastError) {
+          sendResponse({ dataUrl: null, error: chrome.runtime.lastError.message });
+        } else {
+          // Gửi cả thông tin scroll để content script crop đúng
+          sendResponse({ dataUrl });
         }
       });
       return true;

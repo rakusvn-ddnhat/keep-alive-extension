@@ -193,6 +193,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Google Sheets Highlighter elements
   const sheetsHighlightToggle = document.getElementById('sheetsHighlightToggle');
+  const showCrosshairIndicatorToggle = document.getElementById('showCrosshairIndicatorToggle');
   const highlightModeSelect = document.getElementById('highlightModeSelect');
   const highlightColorPicker = document.getElementById('highlightColorPicker');
   const highlightColorValue = document.getElementById('highlightColorValue');
@@ -351,7 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Load saved state
-  chrome.storage.local.get(['isEnabled', 'isRecording', 'domainFilter', 'showIndicator', 'copyModeEnabled', 'showCopyIndicator', 'translateModeEnabled', 'showTranslateIndicator', 'translateOnHover', 'translateTargetLang', 'sheetsHighlightEnabled', 'highlightMode', 'highlightColor'], (result) => {
+  chrome.storage.local.get(['isEnabled', 'isRecording', 'domainFilter', 'showIndicator', 'copyModeEnabled', 'showCopyIndicator', 'translateModeEnabled', 'showTranslateIndicator', 'translateOnHover', 'translateTargetLang', 'sheetsHighlightEnabled', 'highlightMode', 'highlightColor', 'showCrosshairIndicator'], (result) => {
     toggleBtn.checked = result.isEnabled || false;
     recordBtn.checked = result.isRecording || false;
     
@@ -383,6 +384,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load Sheets Highlight state
     if (sheetsHighlightToggle) {
       sheetsHighlightToggle.checked = result.sheetsHighlightEnabled || false;
+    }
+    if (showCrosshairIndicatorToggle) {
+      showCrosshairIndicatorToggle.checked = result.showCrosshairIndicator !== false;
     }
     if (highlightModeSelect) {
       highlightModeSelect.value = result.highlightMode || 'row';
@@ -525,6 +529,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   
+  // Toggle Crosshair Indicator visibility
+  if (showCrosshairIndicatorToggle) {
+    showCrosshairIndicatorToggle.addEventListener('change', () => {
+      const show = showCrosshairIndicatorToggle.checked;
+      chrome.storage.local.set({ showCrosshairIndicator: show });
+    });
+  }
+  
   // Chọn chế độ highlight
   if (highlightModeSelect) {
     highlightModeSelect.addEventListener('change', () => {
@@ -614,6 +626,24 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // Export cURL JSON (for API Tester import)
+  const exportCurlJsonBtn = document.getElementById('exportCurlJson');
+  if (exportCurlJsonBtn) {
+    exportCurlJsonBtn.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ action: 'exportCurlJson' }, (response) => {
+        if (chrome.runtime.lastError) {
+          alert('Lỗi: ' + chrome.runtime.lastError.message);
+          return;
+        }
+        if (response && response.success) {
+          alert('Đã export cURL JSON! Bạn có thể import file này vào API Tester.');
+        } else if (response && response.error) {
+          alert(response.error);
+        }
+      });
+    });
+  }
+
   // Export JMeter
   exportJMeterBtn.addEventListener('click', () => {
     chrome.runtime.sendMessage({ action: 'exportJMeter' }, (response) => {
@@ -652,6 +682,44 @@ document.addEventListener('DOMContentLoaded', () => {
   if (openApiTesterBtn) {
     openApiTesterBtn.addEventListener('click', () => {
       chrome.tabs.create({ url: chrome.runtime.getURL('api-tester.html') });
+    });
+  }
+  
+  // API Tester Toggle - inject vào trang khi bật
+  const apiTesterToggle = document.getElementById('apiTesterToggle');
+  if (apiTesterToggle) {
+    // Load trạng thái đã lưu
+    chrome.storage.local.get(['apiTesterEnabled'], (result) => {
+      apiTesterToggle.checked = result.apiTesterEnabled || false;
+    });
+    
+    apiTesterToggle.addEventListener('change', () => {
+      const enabled = apiTesterToggle.checked;
+      chrome.storage.local.set({ apiTesterEnabled: enabled });
+      
+      // Gửi message tới tất cả tabs
+      chrome.tabs.query({}, (tabs) => {
+        tabs.forEach(tab => {
+          if (tab.id) {
+            chrome.tabs.sendMessage(tab.id, { 
+              action: 'toggleApiTester', 
+              enabled: enabled 
+            }).catch(() => {}); // Ignore errors for tabs without content script
+          }
+        });
+      });
+      
+      // Inject vào tab hiện tại nếu bật
+      if (enabled) {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (!tabs[0]) return;
+          chrome.tabs.sendMessage(tabs[0].id, { action: 'injectApiTester' }, (response) => {
+            if (chrome.runtime.lastError) {
+              console.error('Inject failed:', chrome.runtime.lastError);
+            }
+          });
+        });
+      }
     });
   }
 
@@ -1490,4 +1558,65 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Load scripts on popup open
   loadScripts();
+
+  // ==================== SCREENSHOT CAPTURE ====================
+  const showScreenshotIndicatorToggle = document.getElementById('showScreenshotIndicatorToggle');
+  const screenshotStatus = document.getElementById('screenshotStatus');
+  const screenshotScaleSelect = document.getElementById('screenshotScale');
+  const screenshotSaveFile = document.getElementById('screenshotSaveFile');
+
+  // Load saved settings
+  chrome.storage.local.get(['screenshotScale', 'screenshotSaveFile', 'showScreenshotIndicator'], (result) => {
+    if (result.screenshotScale) screenshotScaleSelect.value = result.screenshotScale;
+    if (result.screenshotSaveFile !== undefined) screenshotSaveFile.checked = result.screenshotSaveFile;
+    showScreenshotIndicatorToggle.checked = result.showScreenshotIndicator !== false;
+  });
+
+  // 👁️ Ẩn/hiện nút bong bóng "📸 Chụp ngay" nổi trên trang
+  showScreenshotIndicatorToggle?.addEventListener('change', () => {
+    const show = showScreenshotIndicatorToggle.checked;
+    chrome.storage.local.set({ showScreenshotIndicator: show });
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) chrome.tabs.sendMessage(tabs[0].id, { action: 'toggleScreenshotIndicator', show }).catch(() => {});
+    });
+  });
+
+  screenshotScaleSelect?.addEventListener('change', () => {
+    chrome.storage.local.set({ screenshotScale: screenshotScaleSelect.value });
+  });
+
+  screenshotSaveFile?.addEventListener('change', () => {
+    chrome.storage.local.set({ screenshotSaveFile: screenshotSaveFile.checked });
+  });
+
+  function showScreenshotStatus(msg, type) {
+    if (!screenshotStatus) return;
+    screenshotStatus.textContent = msg;
+    screenshotStatus.className = `screenshot-status ${type}`;
+    if (type !== 'info') setTimeout(() => { screenshotStatus.className = 'screenshot-status'; }, 3500);
+  }
+
+  // Đảm bảo content script đã được inject vào tab
+  async function ensureContentScriptInjected(tabId) {
+    return new Promise((resolve) => {
+      // Ping thử content script trước
+      chrome.tabs.sendMessage(tabId, { action: 'ping' }, (response) => {
+        if (chrome.runtime.lastError || !response) {
+          // Content script chưa có → inject thủ công
+          chrome.scripting.executeScript({
+            target: { tabId },
+            files: ['bergamot/offline-dictionary.js', 'content.js']
+          }, () => {
+            if (chrome.runtime.lastError) {
+              console.warn('[Screenshot] Could not inject content script:', chrome.runtime.lastError.message);
+            }
+            // Chờ script khởi tạo
+            setTimeout(resolve, 300);
+          });
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
 });

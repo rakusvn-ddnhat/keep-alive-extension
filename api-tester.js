@@ -7,10 +7,12 @@
   const urlInput = document.getElementById('urlInput');
   const sendBtn = document.getElementById('sendBtn');
   const importCurlBtn = document.getElementById('importCurlBtn');
+  const importCurlListBtn = document.getElementById('importCurlListBtn');
   const clearBtn = document.getElementById('clearBtn');
   const historyBtn = document.getElementById('historyBtn');
   const loadRecordsBtn = document.getElementById('loadRecordsBtn');
   const importModal = document.getElementById('importModal');
+  const importListModal = document.getElementById('importListModal');
   const historyModal = document.getElementById('historyModal');
   const recordsModal = document.getElementById('recordsModal');
   const curlInput = document.getElementById('curlInput');
@@ -36,6 +38,9 @@
 
   // History storage
   let requestHistory = [];
+  
+  // Imported cURL list storage
+  let importedCurlList = [];
 
   // Initialize
   function init() {
@@ -46,6 +51,7 @@
     setupEventListeners();
     setupRecordsModal();
     setupViewModeToggle();
+    setupImportCurlList();
     updateMethodColor();
     
     // Check if there's a pending cURL to import
@@ -779,16 +785,16 @@
 
   function renderHistory() {
     historyList.innerHTML = '';
-    
+
     if (requestHistory.length === 0) {
       historyList.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">No history yet</div>';
       return;
     }
-    
-    requestHistory.forEach((item, index) => {
+
+    requestHistory.forEach((item) => {
       const div = document.createElement('div');
       div.className = 'history-item';
-      
+
       const methodColor = {
         'GET': '#4ec9b0',
         'POST': '#dcdcaa',
@@ -796,10 +802,10 @@
         'DELETE': '#f14c4c',
         'PATCH': '#ce9178'
       }[item.method] || '#888';
-      
-      const statusColor = item.status >= 200 && item.status < 300 ? '#4ec9b0' : 
+
+      const statusColor = item.status >= 200 && item.status < 300 ? '#4ec9b0' :
                           item.status >= 400 ? '#f14c4c' : '#dcdcaa';
-      
+
       div.innerHTML = `
         <span class="method" style="background: ${methodColor}20; color: ${methodColor};">${item.method}</span>
         <span style="color: ${statusColor}; font-size: 11px; margin-right: 8px;">${item.status}</span>
@@ -807,16 +813,244 @@
         <div class="url">${escapeHtml(item.url)}</div>
         <div class="time">${new Date(item.timestamp).toLocaleString()}</div>
       `;
-      
+
+      // Click to load
       div.addEventListener('click', () => {
         urlInput.value = item.url;
         methodSelect.value = item.method;
         updateMethodColor();
+
+        // Load headers
+        if (item.headers) {
+          const headersEditor = document.getElementById('headersEditor');
+          headersEditor.innerHTML = '';
+          Object.entries(item.headers).forEach(([key, value]) => {
+            addKeyValueRow('headersEditor', key, value);
+          });
+        }
+
+        // Load body
+        if (item.body) {
+          bodyEditor.value = item.body;
+          document.querySelector('input[name="bodyType"][value="json"]').checked = true;
+        }
+
         historyModal.classList.remove('show');
       });
-      
+
       historyList.appendChild(div);
     });
+  }
+
+  // ==================== IMPORT CURL LIST ====================
+  
+  function setupImportCurlList() {
+    const selectFileBtn = document.getElementById('selectCurlListFile');
+    const fileInput = document.getElementById('curlListFileInput');
+    const fileNameSpan = document.getElementById('curlListFileName');
+    const previewDiv = document.getElementById('curlListPreview');
+    const itemsDiv = document.getElementById('curlListItems');
+    const closeBtn = document.getElementById('closeImportList');
+    const countSpan = document.getElementById('curlListCount');
+    const clearAllBtn = document.getElementById('clearAllCurlList');
+    const importAllBtn = document.getElementById('importAllCurlList');
+    
+    if (importCurlListBtn) {
+      importCurlListBtn.addEventListener('click', () => {
+        importListModal.classList.add('show');
+      });
+    }
+    
+    if (selectFileBtn && fileInput) {
+      selectFileBtn.addEventListener('click', () => {
+        fileInput.click();
+      });
+      
+      fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        fileNameSpan.textContent = file.name;
+        
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            const data = JSON.parse(event.target.result);
+            if (data.requests && Array.isArray(data.requests)) {
+              importedCurlList = [...data.requests]; // Clone array
+              renderCurlList();
+            } else {
+              alert('File JSON không đúng format! Cần có trường "requests" là một array.');
+            }
+          } catch (err) {
+            alert('Lỗi đọc file JSON: ' + err.message);
+          }
+        };
+        reader.readAsText(file);
+      });
+    }
+    
+    // Clear All button
+    if (clearAllBtn) {
+      clearAllBtn.addEventListener('click', () => {
+        if (confirm('Xóa tất cả requests khỏi danh sách?')) {
+          importedCurlList = [];
+          renderCurlList();
+        }
+      });
+    }
+    
+    // Import All button
+    if (importAllBtn) {
+      importAllBtn.addEventListener('click', () => {
+        if (importedCurlList.length === 0) {
+          alert('Không có request nào để import!');
+          return;
+        }
+        
+        // Lưu vào history và load request đầu tiên
+        importedCurlList.forEach(req => {
+          // Add to history
+          const historyItem = {
+            method: req.method,
+            url: req.url,
+            headers: req.headers || {},
+            body: req.body || '',
+            timestamp: new Date().toISOString()
+          };
+          requestHistory.unshift(historyItem);
+        });
+        
+        // Giữ tối đa 100 items
+        if (requestHistory.length > 100) {
+          requestHistory = requestHistory.slice(0, 100);
+        }
+        saveHistory();
+        
+        // Load request đầu tiên
+        loadRequestFromList(importedCurlList[0]);
+        
+        alert(`Đã import ${importedCurlList.length} requests vào History!\nRequest đầu tiên đã được load. Mở History để xem tất cả.`);
+        importListModal.classList.remove('show');
+      });
+    }
+    
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        importListModal.classList.remove('show');
+      });
+    }
+    
+    // Close modal when clicking outside
+    if (importListModal) {
+      importListModal.addEventListener('click', (e) => {
+        if (e.target === importListModal) {
+          importListModal.classList.remove('show');
+        }
+      });
+    }
+    
+    // Render function
+    function renderCurlList() {
+      const itemsDiv = document.getElementById('curlListItems');
+      const previewDiv = document.getElementById('curlListPreview');
+      const countSpan = document.getElementById('curlListCount');
+      const clearAllBtn = document.getElementById('clearAllCurlList');
+      const importAllBtn = document.getElementById('importAllCurlList');
+      
+      if (!itemsDiv || !previewDiv) return;
+      
+      if (importedCurlList.length === 0) {
+        previewDiv.style.display = 'none';
+        clearAllBtn.style.display = 'none';
+        importAllBtn.style.display = 'none';
+        countSpan.textContent = '';
+        return;
+      }
+      
+      previewDiv.style.display = 'block';
+      clearAllBtn.style.display = 'inline-block';
+      importAllBtn.style.display = 'inline-block';
+      countSpan.textContent = `${importedCurlList.length} request(s)`;
+      
+      itemsDiv.innerHTML = '';
+      
+      importedCurlList.forEach((req, index) => {
+        const item = document.createElement('div');
+        item.style.cssText = 'display: flex; align-items: center; padding: 10px; background: #2d2d2d; border-radius: 6px; margin-bottom: 8px; gap: 10px;';
+        item.dataset.index = index;
+        item.innerHTML = `
+          <span class="method" style="font-weight: bold; font-size: 11px; padding: 3px 8px; border-radius: 3px; min-width: 55px; text-align: center; background: ${getMethodColor(req.method)}; color: white;">${req.method}</span>
+          <span class="url" style="flex: 1; font-family: monospace; font-size: 11px; color: #d4d4d4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${req.url}">${req.url}</span>
+          <button class="btn-load" style="padding: 5px 12px; font-size: 11px; background: #388a34; color: white; border: none; border-radius: 4px; cursor: pointer;">▶ Load</button>
+          <button class="btn-delete" style="padding: 5px 10px; font-size: 11px; background: #c42b1c; color: white; border: none; border-radius: 4px; cursor: pointer;">✕</button>
+        `;
+        
+        // Hover effect
+        item.addEventListener('mouseenter', () => { item.style.background = '#3c3c3c'; });
+        item.addEventListener('mouseleave', () => { item.style.background = '#2d2d2d'; });
+        
+        // Load button
+        const loadBtn = item.querySelector('.btn-load');
+        loadBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          loadRequestFromList(req);
+          importListModal.classList.remove('show');
+        });
+        
+        // Delete button
+        const deleteBtn = item.querySelector('.btn-delete');
+        deleteBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          importedCurlList.splice(index, 1);
+          renderCurlList();
+        });
+        
+        itemsDiv.appendChild(item);
+      });
+    }
+  }
+  
+  function getMethodColor(method) {
+    const colors = {
+      'GET': '#4ec9b0',
+      'POST': '#dcdcaa',
+      'PUT': '#569cd6',
+      'DELETE': '#f14c4c',
+      'PATCH': '#ce9178'
+    };
+    return colors[method] || '#888';
+  }
+  
+  function loadRequestFromList(req) {
+    // Nếu có curl string thì parse nó
+    if (req.curl) {
+      parseCurl(req.curl);
+    } else {
+      // Load trực tiếp từ data
+      urlInput.value = req.url || '';
+      methodSelect.value = req.method || 'GET';
+      updateMethodColor();
+      
+      // Set headers
+      const headersEditor = document.getElementById('headersEditor');
+      if (headersEditor && req.headers) {
+        headersEditor.innerHTML = '';
+        const headers = Object.entries(req.headers);
+        if (headers.length > 0) {
+          headers.forEach(([name, value]) => {
+            addKeyValueRow('headersEditor', name, value);
+          });
+        } else {
+          addKeyValueRow('headersEditor');
+        }
+      }
+      
+      // Set body
+      if (bodyEditor && req.body) {
+        bodyEditor.value = typeof req.body === 'string' ? req.body : JSON.stringify(req.body, null, 2);
+      }
+    }
   }
 
   // ==================== LOAD RECORDS ====================
@@ -886,28 +1120,31 @@
   
   function loadRecordedRequests() {
     if (!recordsList) return;
-    
+
     // Clear search input
     const recordsSearchInput = document.getElementById('recordsSearchInput');
     if (recordsSearchInput) {
       recordsSearchInput.value = '';
     }
-    
-    // Gửi message đến background để lấy recorded requests
-    chrome.runtime.sendMessage({ action: 'getRecordedRequests' }, (response) => {
+
+    // Đọc trực tiếp từ chrome.storage (nơi background.js và content.js đều ghi vào)
+    chrome.storage.local.get(['recordedRequests', 'cachedRequests'], (result) => {
       if (chrome.runtime.lastError) {
-        console.error('Error getting recorded requests:', chrome.runtime.lastError);
+        console.error('Error reading storage:', chrome.runtime.lastError);
         recordsList.innerHTML = `
           <div class="records-empty">
             <div class="icon">⚠️</div>
-            <div>Không thể kết nối với background script</div>
+            <div>Không thể đọc storage: ${chrome.runtime.lastError.message}</div>
           </div>
         `;
         return;
       }
-      
-      const requests = response?.requests || [];
+
+      // Thử cả 2 keys (recordedRequests từ background, cachedRequests từ cache)
+      const requests = result.recordedRequests || result.cachedRequests || [];
       allRecordedRequests = requests;
+
+      console.log('[API Tester] Loaded', requests.length, 'requests from storage');
       
       // Update count
       const recordsCount = document.getElementById('recordsCount');

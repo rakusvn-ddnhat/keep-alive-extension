@@ -80,5 +80,10 @@
   "downloading": "ダウンロード中...",
   "downloadComplete": "ダウンロード完了！",
   "updateSteps": "更新手順：",
-  "copyright": "© Đoàn Duy Nhất"
+  "copyright": "© Đoàn Duy Nhất",
+  "screenshotCapture": "📸 スクリーンショット",
+  "screenshotHelp": "💡 範囲をドラッグ → 画像をクリップボードにコピーしてAIに貼り付け",
+  "screenshotScale": "倍率:",
+  "screenshotSaveFile": "PNGファイルを自動保存",
+  "startScreenshot": "📸 範囲を選択して撮影"
 }

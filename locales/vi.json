@@ -80,5 +80,10 @@
   "downloading": "Đang tải xuống...",
   "downloadComplete": "Đã tải xong!",
   "updateSteps": "Các bước cập nhật:",
-  "copyright": "© Đoàn Duy Nhất"
+  "copyright": "© Đoàn Duy Nhất",
+  "screenshotCapture": "📸 Screenshot Capture",
+  "screenshotHelp": "💡 Kéo chọn vùng màn hình → tự động copy ảnh vào clipboard để dán vào AI",
+  "screenshotScale": "Tỉ lệ:",
+  "screenshotSaveFile": "Tự động lưu file PNG",
+  "startScreenshot": "📸 Chụp vùng chọn"
 }
