@@ -85,5 +85,16 @@
   "screenshotHelp": "💡 Drag to select a region → auto copy image to clipboard for AI",
   "screenshotScale": "Scale:",
   "screenshotSaveFile": "Auto save PNG file",
-  "startScreenshot": "📸 Capture Selection"
+  "startScreenshot": "📸 Capture Selection",
+  "screenshotScale1x": "1x (Standard)",
+  "screenshotScale2x": "2x (Sharp)",
+  "screenshotScale3x": "3x (Ultra Sharp)",
+  "showOnPage": "Show button on page",
+  "chatAi": "🤖 Chat AI",
+  "chatAiService": "AI Service:",
+  "chatAiHelp": "💡 Enable to show floating \"Chat Now\" button on every page. Press 👁️ to hide temporarily.",
+  "apiTesterNewTab": "🔗 New Tab",
+  "apiTesterNewTabDesc": "Open in separate tab with full history & import/export",
+  "apiTesterToggleDesc": "Embed into webpage (bypass CORS, quick API test)",
+  "viewList": "📋 View"
 }

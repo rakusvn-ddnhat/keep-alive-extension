@@ -85,5 +85,16 @@
   "screenshotHelp": "💡 範囲をドラッグ → 画像をクリップボードにコピーしてAIに貼り付け",
   "screenshotScale": "倍率:",
   "screenshotSaveFile": "PNGファイルを自動保存",
-  "startScreenshot": "📸 範囲を選択して撮影"
+  "startScreenshot": "📸 範囲を選択して撮影",
+  "screenshotScale1x": "1x (標準)",
+  "screenshotScale2x": "2x (シャープ)",
+  "screenshotScale3x": "3x (超高精細)",
+  "showOnPage": "ページにボタンを表示",
+  "chatAi": "🤖 チャットAI",
+  "chatAiService": "AIサービス:",
+  "chatAiHelp": "💡 有効にするとすべてのページに\"今すぐチャット\"ボタンを表示。👁️で一時非表示。",
+  "apiTesterNewTab": "🔗 新しいタブ",
+  "apiTesterNewTabDesc": "履歴・インポート/エクスポート機能付きの独立タブで開く",
+  "apiTesterToggleDesc": "Webページに埋め込む（CORSバイパス、クイックAPIテスト）",
+  "viewList": "📋 表示"
 }

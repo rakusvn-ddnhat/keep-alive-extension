@@ -85,5 +85,16 @@
   "screenshotHelp": "💡 Kéo chọn vùng màn hình → tự động copy ảnh vào clipboard để dán vào AI",
   "screenshotScale": "Tỉ lệ:",
   "screenshotSaveFile": "Tự động lưu file PNG",
-  "startScreenshot": "📸 Chụp vùng chọn"
+  "startScreenshot": "📸 Chụp vùng chọn",
+  "screenshotScale1x": "1x (Tiêu chuẩn)",
+  "screenshotScale2x": "2x (Sắc nét)",
+  "screenshotScale3x": "3x (Rất nét)",
+  "showOnPage": "Hiện nút trên trang",
+  "chatAi": "🤖 Chat AI",
+  "chatAiService": "Dịch vụ AI:",
+  "chatAiHelp": "💡 Bật để hiện nút nổi \"Chat Ngay\" trên mọi trang. Nhấn 👁️ để ẩn tạm.",
+  "apiTesterNewTab": "🔗 Tab mới",
+  "apiTesterNewTabDesc": "Mở trong tab riêng, có đầy đủ lịch sử & import/export",
+  "apiTesterToggleDesc": "Nhúng vào trang web (bypass CORS, test nhanh API)",
+  "viewList": "📋 Xem"
 }
